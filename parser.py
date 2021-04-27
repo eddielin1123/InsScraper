@@ -65,5 +65,5 @@ class Parser:
         loop.run_until_complete(self._f_bounded(mongo_info))
         
 if __name__ == '__main__':
-    mongo_info = [i for i in get_ig_id_url()] # [id, url]
-    # Parser().folower(mongo_info)
+    mongo_info = [i for i in get_ig_id_url()] # (id, url)
+    Parser().folower(mongo_info)
