@@ -9,6 +9,7 @@ import asyncio
 import random
 from time import sleep, time
 from mongo import get_ig_id_url
+
 class Parser:
     '''
     取得以下資訊並更新至MongoDB:
@@ -46,8 +47,6 @@ class Parser:
             follow_count = await self._follow_extract(html)
             name = url.split('com/')[1].replace('/','')
             print(f'{name} has {follow_count} followers')
-            
-            
             
             sleep(random.uniform(2,7))
             
