@@ -1,5 +1,7 @@
 from mongoengine import *
-from datetime import datetime
+from datetime import datetime, timedelta
+from copy import deepcopy
+import pytz
 
 h = open('property.txt').read().splitlines()
 connect(db='kol_db', host=h[2])
@@ -24,6 +26,7 @@ class IgRecord(Document):
     follow_count = StringField(null=True)
     instagram_url = StringField(null=True)
     created_at = DateField(null=True)
+    updated_at = DateField(null=True)
     records = ListField(null=True)
 
 def get_ig_id_url():
@@ -32,13 +35,30 @@ def get_ig_id_url():
     for ig in IgRecord.objects:
         _output.append((ig.user_id, ig.instagram_url))
     # print(_output)
-    return _output[:10]
+    return _output
 
 def update_ig_s_count(id,count):
     # Update Kol
+    tw_dt = ((datetime.now())+timedelta(hours=8))
+
     update_list = deepcopy(Kol.objects(user_id=id)[0].ig_sub)
     update_list[0]['subscribe'] = count
-    Kol.objects(user_id=id).update(set__ig_sub=update_list)
+    Kol.objects(user_id=id).update(set__ig_sub=update_list, set__updated_at=tw_dt)
     
     # Update Ig_record
-    IgRecord.objects(user_id=id).update(set__follow_count=count)
+    IgRecord.objects(user_id=id).update(set__follow_count=count, set__updated_at=tw_dt)
+
+def update_subs(update_list):
+    kol_ope = []
+    operations = []
+    for kol in update_list:
+        update_list = deepcopy(Kol.objects(user_id=kol['user_id'])[0].ig_sub)
+        update_list[0]['subscribe'] = kol['sub_count']
+        kol_ope.append(UpdateOne({'user_id':kol['user_id']}, {'$set':{'ig_sub':update_list, 'updated_at':tw_dt}}))
+        operations.append(UpdateOne({'user_id':kol['user_id']}, {'$set':{'follow_count':kol['sub_count'], 'updated_at':tw_dt}}))
+    kol_collection = Kol._get_collection().bulk_write(kol_ope,ordered=False)
+    ig_collection = IgRecord._get_collection().bulk_write(operations, ordered=False)
+
+
+
+# update_ig_s_count(1,'78000')
