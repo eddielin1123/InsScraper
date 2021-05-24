@@ -39,9 +39,13 @@ async def ig_context(page, postId):
             logger.error(f'找不到標籤 請確認 IG 是否改版')
 
         return text
-    loop = asyncio.get_running_loop()
+    loop = asyncio.get_event_loop()
     postData = loop.run_until_complete(get_post_context(page, postId))
-    print(f'IG 已擷取文案 {postData}')
+    print('IG 已擷取文案：')
+    print('='*30)
+    print(postData)
+    print('='*30)
+
     return postData
 
 async def extract_comments_full(page, postData):
@@ -56,7 +60,7 @@ async def extract_comments_full(page, postData):
         try:
             await page.goto(f"https://www.instagram.com/p/{postId}/")
             await page.wait_for_load_state('load')
-            await page.wait_for_load_state('domcontentloaded')
+            # await page.wait_for_load_state('domcontentloaded')
             # await page.wait_for_load_state('networkidle')
             await page.wait_for_timeout(random.randint(4000,8000))
         except TimeoutError as e:
@@ -66,9 +70,9 @@ async def extract_comments_full(page, postData):
         # 擷取留言及子留言
         return Comment(output_json, page)
 
-    loop = asyncio.get_running_loop() #! 此處必須使用get_running_loop取得當下loop 使用new_event_loop會報錯
+    loop = asyncio.get_event_loop() 
     loop.run_until_complete(_get_post_comment(page, postId, output_json))
-
+    
     postData['comments'] = output_json
     
     return postData

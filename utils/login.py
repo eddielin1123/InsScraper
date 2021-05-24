@@ -12,6 +12,8 @@ async def check_login(page, postId):
 
 async def _enter_accinfo(page, postId):
     try:
+        await page.goto('https://www.instagram.com/')
+        await page.wait_for_load_state('load')
         await page.fill("input[name='username']", "eddielin1234") # 輸入帳密
         await page.wait_for_timeout(random.randint(2000,4000))
         await page.fill('input[name="password"]', 'zdtb0626')

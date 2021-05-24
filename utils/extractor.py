@@ -90,7 +90,7 @@ async def _get_comments(output_json, page):
                 'context':comment,
                 'likes':likes,
                 'published_time':time_s,
-                'relpies':replies
+                'replies':replies
                 
             })
         
@@ -171,7 +171,7 @@ async def _press_more_comments(page):
     while await page.is_visible('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button'):
         await page.screenshot(path='/home/eddielin/ad_spiders/ig_scraper/more_comments_button.png')
         await page.click('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button')
-        await page.wait_for_timeout(random.randint(2000,4000))
+        await page.wait_for_timeout(random.randint(2000,3000))
         # print('已點選 顯示更多留言')
         last_comment = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[last()]/div/li/div/div[1]/div[2]/span')
         # print(last_comment)
@@ -181,5 +181,5 @@ async def _press_more_comments(page):
             # print('已至最後一頁')
             break
     await page.wait_for_load_state('load')
-    await page.wait_for_load_state('domcontentloaded')
-    await page.wait_for_load_state('networkidle')
+    # await page.wait_for_load_state('domcontentloaded')
+    # await page.wait_for_load_state('networkidle')
