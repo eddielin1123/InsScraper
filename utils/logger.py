@@ -13,7 +13,8 @@ class Logger:
                         handlers=[TimedRotatingFileHandler(f'/home/eddielin/ad_spiders/logs/{mst_now.strftime("%m-%d-%Y")}',when="D", interval=1, backupCount=15,
                                                         encoding="UTF-8", delay=False),])
         self.logger = logging.getLogger(__name__)
-    
+        self.logger.setLevel(logging.INFO)
+        
     def debug(self, string):
         return self.logger.debug(string)
     
