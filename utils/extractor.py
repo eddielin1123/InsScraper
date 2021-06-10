@@ -18,13 +18,13 @@ async def _get_comments(output_json, page):
     #* 包裝協程任務
     
     # 點擊更多留言    
-    await _press_more_comments(page)
+    await press_more_comments(page)
     
     # 所有留言選擇器
     print('開始擷取留言')
     comments = await page.query_selector_all('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul') # -> List
     if not comments == []:
-        cmts_idx = [(i, c) for i,c in enumerate(comments)] 
+        cmts_idx = [(i, c) for i, c in enumerate(comments)] 
 
         # 點開所有子留言
         for c in comments:
@@ -51,7 +51,7 @@ async def _get_comments(output_json, page):
                 # 點擊 顯示更多留言
                 await _press_more_replies(more_replies_button, c, page) 
     else:
-        await page.screenshot(path='/home/eddielin/ad_spiders/ig_scraper/comment_not_found.png')
+        await page.screenshot(path='IG_comment_not_found.png')
         print('找不到主留言')
         return comments
         
@@ -72,8 +72,6 @@ async def _get_comments(output_json, page):
         comment_author = await ca_qs.inner_text() # 作者 
         thumbnail = await page.get_attribute(f'//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[{str(i+1)}]/div/li/div/div[1]/div[1]/div/a/img','src') # 頭像
         likes = likes.replace(' likes','') if not 'Reply' in likes else '0'
-        # print(f'{comment_author} likes:{likes} {comment}\n{thumbnail}')
-        # print(f'{comment_author}: {comment}')
 
         # 取得子留言
         more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
@@ -102,13 +100,7 @@ async def _get_replies(page, i, c):
     #* 擷取子留言
     
     replies =[]
-    # more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
-    # if more_replies_button:
         
-        # 點擊 顯示更多留言
-        # await _press_more_replies(more_replies_button, c, page) 
-        
-        # 擷取子留言
     # TODO 將以下 迴圈 優化成 協程
     replies_selector = await c.query_selector_all('//li/ul/div') 
     for idx, r in enumerate(replies_selector):
@@ -134,52 +126,40 @@ async def _get_replies(page, i, c):
                 'likes':reply_likes,
                 'published_time':reply_time
                 })
-    # print(replies)
-    return replies if not replies == [] else None
 
-#/html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[1]/li/ul/li/div/button/
+    return replies if not replies == [] else None
 
 async def _press_more_replies(more_replies_button, c, page): 
     #* 點擊 顯示更多子留言 
-    await page.screenshot(path='/home/eddielin/ad_spiders/ig_scraper/press_more_replies.png')
+
     t = await more_replies_button.inner_text()
-    # print(t)
+
     while 'View replies' in t:  
         more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
+
         if more_replies_button:
             await more_replies_button.click()
             await page.wait_for_load_state('load')
             await page.wait_for_timeout(random.randint(2000,3000))
             t = await more_replies_button.inner_text()
-            # print(t)
         else:
             print('找不到 顯示更多子留言 按鈕')
             logger.error('找不到 顯示更多子留言 按鈕')
+
     #! 此處不可寫page.wait_for_load_state('load')
-    # print(f'{t}點擊完成')
     
 
-async def _press_more_comments(page):
+async def press_more_comments(page):
     #* 點擊 顯示更多留言 
-    await page.screenshot(path='/home/eddielin/ad_spiders/ig_scraper/press_more_comments.png')
     
     last_c = () 
 
-    # if await page.is_visible('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button'):
-    #     print('fuck my life')
-
     while await page.is_visible('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button'):
-        await page.screenshot(path='/home/eddielin/ad_spiders/ig_scraper/more_comments_button.png')
         await page.click('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button')
         await page.wait_for_timeout(random.randint(2000,3000))
-        # print('已點選 顯示更多留言')
         last_comment = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[last()]/div/li/div/div[1]/div[2]/span')
-        # print(last_comment)
         last_c += (last_comment,)
         
         if len(last_c) > 1 and last_c[-1] == last_c[-2]:
-            # print('已至最後一頁')
             break
     await page.wait_for_load_state('load')
-    # await page.wait_for_load_state('domcontentloaded')
-    # await page.wait_for_load_state('networkidle')

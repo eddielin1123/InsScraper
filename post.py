@@ -1,12 +1,13 @@
+import re
 import random
 import asyncio
-from time import time
+from time import time, sleep
 from logging.handlers import TimedRotatingFileHandler
 from playwright.async_api import async_playwright, TimeoutError
 
 
 from .utils.login import check_login
-from .utils.extractor import Comment
+from .utils.extractor import Comment, press_more_comments
 from .utils.logger import Logger
 
 logger = Logger()
@@ -17,16 +18,20 @@ async def ig_context(page, postId):
         '''取得文案'''
 
         page.set_default_navigation_timeout(60000)
-
-        try:
-            await page.goto(f"https://www.instagram.com/p/{postId}/")
-            await page.wait_for_load_state('load')
-            await page.wait_for_load_state('domcontentloaded')
-            await page.wait_for_load_state('networkidle')
-            print('IG 已進入粉專')
-        except TimeoutError as e:
-            await page.screenshot(path='error1.png')
-            logger.error(f'IG: {postId} 連線逾時(未進入粉專)')
+        for i in range(5):
+            try:
+                await page.goto(f"https://www.instagram.com/p/{postId}/")
+                await page.wait_for_load_state('load')
+                await page.wait_for_load_state('domcontentloaded')
+                await page.wait_for_load_state('networkidle')
+                print('IG 已進入粉專')
+                break
+            except TimeoutError as e:
+                await page.screenshot(path='IG_TimeoutError1.png')
+                print(f'IG: {postId} 連線逾時(未進入粉專) 嘗試第{i}次')
+                logger.error(f'IG: {postId} 連線逾時(未進入粉專) 嘗試第{i}次')
+                sleep(3)
+                continue
 
         try:
             print('解析中')
@@ -34,9 +39,16 @@ async def ig_context(page, postId):
             text = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span',timeout=0)
             logger.info(f'IG: {postId} IG 已取得文案 https://www.instagram.com/p/{postId}/')
         except TimeoutError as e:
-            await page.screenshot(path='critical.png')
+            await page.screenshot(path='IG_TimeoutError2.png')
             text = ''
-            logger.error(f'找不到標籤 請確認 IG 是否改版')
+            logger.error(f'IG 文案找不到標籤 請確認 IG 是否改版')
+
+        try:
+            likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div[2]/a/span')
+            likes = int(likes)
+        except TimeoutError:
+            likes = 0
+            logger.error(f'IG 文案讚數找不到標籤 請確認 IG 是否改版')
 
         return text
     loop = asyncio.get_event_loop()
@@ -52,20 +64,25 @@ async def extract_comments_full(page, postData):
     
     output_json = []
     postId = postData['postId']
+
     async def _get_post_comment(page, postId, output_json):
 
         page.set_default_navigation_timeout(70000)
 
         # 進入粉專頁面
-        try:
-            await page.goto(f"https://www.instagram.com/p/{postId}/")
-            await page.wait_for_load_state('load')
-            # await page.wait_for_load_state('domcontentloaded')
-            # await page.wait_for_load_state('networkidle')
-            await page.wait_for_timeout(random.randint(4000,8000))
-        except TimeoutError as e:
-            await page.screenshot(path='/home/eddielin/ad_spiders/ig_scraper/kol_page_timeout.png')
-            raise f'連線逾時: {e}'
+        for i in range(5):
+            try:
+                await page.goto(f"https://www.instagram.com/p/{postId}/")
+                await page.wait_for_load_state('load')
+                await page.wait_for_timeout(random.randint(4000,8000))
+                break
+            except TimeoutError as e:
+                await page.screenshot(path='IG_kol_page_timeout.png')
+                print(f'IG 連線逾時: 重新嘗試第{i}次')
+                logger.error(f'IG 連線逾時: 重新嘗試第{i}次 {e}')
+                sleep(3)
+                # raise f'連線逾時: {e}'
+                continue
 
         # 擷取留言及子留言
         return Comment(output_json, page)
@@ -77,4 +94,37 @@ async def extract_comments_full(page, postData):
     
     return postData
 
+async def basic_count(page, postId):
 
+    for i in range(5):
+        try:
+            await page.goto(f"https://www.instagram.com/p/{postId}/")
+            await page.wait_for_load_state('load')
+            await page.wait_for_timeout(random.randint(4000,8000))
+            break
+        except TimeoutError as e:
+            await page.screenshot(path='IG_kol_page_timeout.png')
+            print(f'IG 連線逾時: 重新嘗試第{i}次')
+            logger.error(f'IG 連線逾時: 重新嘗試第{i}次 {e}')
+            sleep(3)
+            # raise f'連線逾時: {e}'
+    
+    likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div/a/span')
+
+    await press_more_comments(page)
+
+    comments = await page.query_selector_all('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul')
+    comment_count = 0
+
+    if not comments == []:
+
+        for c in comments:
+            comment_count += 1
+            more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
+
+            if more_replies_button:
+                button_text = await more_replies_button.inner_text()
+                replies_count = re.search(r'(\d+)', button_text).group(1)
+                comment_count += int(replies_count) 
+    
+    return (likes, comment_count)
