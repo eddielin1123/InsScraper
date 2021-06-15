@@ -64,14 +64,14 @@ async def _get_comments(output_json, page):
         ca_qs = await c.query_selector('//div/li/div/div[1]/div[2]/h3/div[1]/span/a')
         time_qs = await c.query_selector('//div/li/div/div[1]/div[2]/div/div/a/time')
         l_qs = await c.query_selector('//div/li/div/div[1]/div[2]/div/div/button[1]')
-        
+
         # 選擇器轉換文字
         comment = await c_qs.inner_text() # 留言
         time_s = await time_qs.inner_text() # 時間
         likes = await l_qs.inner_text() # 讚數
         comment_author = await ca_qs.inner_text() # 作者 
         thumbnail = await page.get_attribute(f'//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[{str(i+1)}]/div/li/div/div[1]/div[1]/div/a/img','src') # 頭像
-        likes = likes.replace(' likes','') if not 'Reply' in likes else '0'
+        likes = int(likes.replace('likes', '').replace('like', '').strip()) if not 'Reply' in likes else 0
 
         # 取得子留言
         more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
@@ -114,7 +114,7 @@ async def _get_replies(page, i, c):
         reply_thumbnail = await page.get_attribute(f'//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[{str(i+1)}]/li/ul/div[{str(idx+1)}]/li/div/div[1]/div[1]/div//img','src')
         reply_text = await rtext.inner_text()
         reply_likes = await rlikes.inner_text()
-        reply_likes = reply_likes.replace(' likes','') if not 'Reply' in reply_likes else '0'
+        reply_likes = int(reply_likes.replace('likes', '').replace('like', '').strip()) if not 'Reply' in reply_likes else '0'
         reply_time = await rtime.inner_text()
         
         # 存入 list

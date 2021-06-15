@@ -22,8 +22,8 @@ async def ig_context(page, postId):
             try:
                 await page.goto(f"https://www.instagram.com/p/{postId}/")
                 await page.wait_for_load_state('load')
-                await page.wait_for_load_state('domcontentloaded')
-                await page.wait_for_load_state('networkidle')
+                # await page.wait_for_load_state('domcontentloaded')
+                # await page.wait_for_load_state('networkidle')
                 print('IG 已進入粉專')
                 break
             except TimeoutError as e:
@@ -52,13 +52,13 @@ async def ig_context(page, postId):
 
         return text
     loop = asyncio.get_event_loop()
-    postData = loop.run_until_complete(get_post_context(page, postId))
+    context = loop.run_until_complete(get_post_context(page, postId))
     print('IG 已擷取文案：')
     print('='*30)
-    print(postData)
+    print(context)
     print('='*30)
 
-    return postData
+    return context
 
 async def extract_comments_full(page, postData):
     
@@ -96,35 +96,44 @@ async def extract_comments_full(page, postData):
 
 async def basic_count(page, postId):
 
-    for i in range(5):
-        try:
-            await page.goto(f"https://www.instagram.com/p/{postId}/")
-            await page.wait_for_load_state('load')
-            await page.wait_for_timeout(random.randint(4000,8000))
-            break
-        except TimeoutError as e:
-            await page.screenshot(path='IG_kol_page_timeout.png')
-            print(f'IG 連線逾時: 重新嘗試第{i}次')
-            logger.error(f'IG 連線逾時: 重新嘗試第{i}次 {e}')
-            sleep(3)
-            # raise f'連線逾時: {e}'
+    async def get_basic_count(page, postId):
+
+        for i in range(5):
+            try:
+                await page.goto(f"https://www.instagram.com/p/{postId}/")
+                await page.wait_for_load_state('load')
+                await page.wait_for_timeout(random.randint(4000,8000))
+                break
+            except TimeoutError as e:
+                await page.screenshot(path='IG_kol_page_timeout.png')
+                print(f'IG 連線逾時: 重新嘗試第{i}次')
+                logger.error(f'IG 連線逾時: 重新嘗試第{i}次 {e}')
+                sleep(3)
+                # raise f'連線逾時: {e}'
+        
+        likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div/a/span')
+
+        await press_more_comments(page)
+
+        comments = await page.query_selector_all('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul')
+        comment_count = 0
+
+        if not comments == []:
+
+            for c in comments:
+                comment_count += 1
+                more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
+
+                if more_replies_button:
+                    button_text = await more_replies_button.inner_text()
+                    replies_count = re.search(r'(\d+)', button_text).group(1)
+                    comment_count += int(replies_count) 
+        
+        print(f'IG Comment_count:{comment_count} Likes:{likes}')
+
+        return (likes, comment_count)
     
-    likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div/a/span')
+    loop = asyncio.get_event_loop()
+    likes, comment_count = loop.run_until_complete(get_basic_count(page, postId))
 
-    await press_more_comments(page)
-
-    comments = await page.query_selector_all('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul')
-    comment_count = 0
-
-    if not comments == []:
-
-        for c in comments:
-            comment_count += 1
-            more_replies_button = await c.query_selector('//li/ul/li/div/button/span')
-
-            if more_replies_button:
-                button_text = await more_replies_button.inner_text()
-                replies_count = re.search(r'(\d+)', button_text).group(1)
-                comment_count += int(replies_count) 
-    
     return (likes, comment_count)
