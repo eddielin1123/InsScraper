@@ -35,9 +35,17 @@ async def ig_context(page, postId):
 
         try:
             print('解析中')
+            a_list = []
             await page.wait_for_selector('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span')
+            all_a_text = await page.query_selector_all('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span/a')
             text = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span',timeout=0)
+            
+            for a in all_a_text:
+                a = await a.inner_text()
+                a_list.append(a)
+
             logger.info(f'IG: {postId} IG 已取得文案 https://www.instagram.com/p/{postId}/')
+
         except TimeoutError as e:
             await page.screenshot(path='IG_TimeoutError2.png')
             text = ''
@@ -50,15 +58,16 @@ async def ig_context(page, postId):
             likes = 0
             logger.error(f'IG 文案讚數找不到標籤 請確認 IG 是否改版')
 
-        return text
+        return text, a_list
+
     loop = asyncio.get_event_loop()
-    context = loop.run_until_complete(get_post_context(page, postId))
+    context, a_list = loop.run_until_complete(get_post_context(page, postId))
     print('IG 已擷取文案：')
     print('='*30)
     print(context)
     print('='*30)
 
-    return context
+    return context, a_list
 
 async def extract_comments_full(page, postData):
     
@@ -112,6 +121,7 @@ async def basic_count(page, postId):
                 # raise f'連線逾時: {e}'
         
         likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div/a/span')
+        likes = int(likes)
 
         await press_more_comments(page)
 

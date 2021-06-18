@@ -1,3 +1,8 @@
 *.png
 *.html
 proxy.py
+mongo.py
+instaScraper.py
+/.vscode
+/__pycache__
+*/__pycache__
