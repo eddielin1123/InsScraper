@@ -13,15 +13,15 @@ async def _enter_accinfo(page, postId):
     try:
         await page.goto('https://www.instagram.com/')
         await page.wait_for_load_state('load')
-        await page.fill("input[name='username']", "eddielin1234") # 輸入帳密
-        await page.wait_for_timeout(random.randint(2000,4000))
+        await page.fill("input[name='username']", "hakapower1002") # 輸入帳密
+        await page.wait_for_timeout(random.randint(4000,7000))
         await page.fill('input[name="password"]', 'zdtb0626')
-        await page.wait_for_timeout(random.randint(2000,4000))
+        await page.wait_for_timeout(random.randint(4000,7000))
         await page.click("button[type='submit']")
         await page.wait_for_load_state('load')
         await page.wait_for_load_state('domcontentloaded') #按下登入後等待載入
         await page.wait_for_load_state('networkidle')
-        await page.wait_for_timeout(random.randint(3000,5000))
+        await page.wait_for_timeout(random.randint(5000,8000))
         
         if await page.is_visible('[data-testid="login-error-message"]'):# 登入被拒絕
             login_err = await page.inner_text('[data-testid="login-error-message"]')
@@ -31,8 +31,8 @@ async def _enter_accinfo(page, postId):
             print(f'登入成功: {page.url}')
             logger.info('IG 登入成功')
         else:
-            print(f'登入成功: {page.url}')
-            logger.info('IG 登入成功')
+            print(f'登入失敗: {page.url}')
+            logger.info('IG 登入失敗')
             
     except TimeoutError as e:
         logger.error(f'登入失敗 連線逾時: {postId} : {e}')

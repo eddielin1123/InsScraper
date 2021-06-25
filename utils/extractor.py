@@ -54,6 +54,8 @@ async def _get_comments(output_json, page):
         await page.screenshot(path='IG_comment_not_found.png')
         print('找不到主留言')
         return comments
+    
+    await page.wait_for_timeout(random.randint(3000,6000))
         
 
     async def __handler(output_json, page, i, c):
@@ -140,7 +142,7 @@ async def _press_more_replies(more_replies_button, c, page):
         if more_replies_button:
             await more_replies_button.click()
             await page.wait_for_load_state('load')
-            await page.wait_for_timeout(random.randint(2000,3000))
+            await page.wait_for_timeout(random.randint(3000,6000))
             t = await more_replies_button.inner_text()
         else:
             print('找不到 顯示更多子留言 按鈕')
@@ -156,7 +158,7 @@ async def press_more_comments(page):
 
     while await page.is_visible('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button'):
         await page.click('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/li/div/button')
-        await page.wait_for_timeout(random.randint(2000,3000))
+        await page.wait_for_timeout(random.randint(3000,6000))
         last_comment = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/ul[last()]/div/li/div/div[1]/div[2]/span')
         last_c += (last_comment,)
         

@@ -45,20 +45,24 @@ async def ig_context(page, postId):
                 a_list.append(a)
 
             logger.info(f'IG: {postId} IG 已取得文案 https://www.instagram.com/p/{postId}/')
+            return text, a_list
 
         except TimeoutError as e:
             await page.screenshot(path='IG_TimeoutError2.png')
             text = ''
             logger.error(f'IG 文案找不到標籤 請確認 IG 是否改版')
 
-        try:
-            likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div[2]/a/span')
-            likes = int(likes)
-        except TimeoutError:
-            likes = 0
-            logger.error(f'IG 文案讚數找不到標籤 請確認 IG 是否改版')
+        finally:
+            await page.close()
+        # try:
+        #     likes = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/section[2]/div/div[2]/a/span')
+        #     likes = int(likes)
+        # except TimeoutError:
+        #     likes = 0
+        #     logger.error(f'IG 文案讚數找不到標籤 請確認 IG 是否改版')
 
-        return text, a_list
+        
+        
 
     loop = asyncio.get_event_loop()
     context, a_list = loop.run_until_complete(get_post_context(page, postId))
@@ -147,3 +151,45 @@ async def basic_count(page, postId):
     likes, comment_count = loop.run_until_complete(get_basic_count(page, postId))
 
     return (likes, comment_count)
+
+async def get_post_context(page, postId):
+    '''取得文案'''
+
+    page.set_default_navigation_timeout(30000)
+    for i in range(5):
+        try:
+            await page.goto(f"https://www.instagram.com/p/{postId}/")
+            await page.wait_for_load_state('load')
+            # await page.wait_for_load_state('domcontentloaded')
+            # await page.wait_for_load_state('networkidle')
+            print('IG 已進入粉專')
+            break
+        except TimeoutError as e:
+            await page.screenshot(path='IG_TimeoutError1.png')
+            print(f'IG: {postId} 連線逾時(未進入粉專) 嘗試第{i}次')
+            logger.error(f'IG: {postId} 連線逾時(未進入粉專) 嘗試第{i}次')
+            sleep(3)
+            continue
+
+    try:
+        print('解析中')
+        a_list = []
+        await page.wait_for_selector('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span')
+        all_a_text = await page.query_selector_all('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span/a')
+        text = await page.inner_text('//html/body/div[1]/section/main/div/div[1]/article/div[3]/div[1]/ul/div/li/div/div/div[2]/span',timeout=0)
+        
+        for a in all_a_text:
+            a = await a.inner_text()
+            a_list.append(a)
+
+        logger.info(f'IG: {postId} IG 已取得文案 https://www.instagram.com/p/{postId}/')
+        return text, a_list
+
+    except TimeoutError as e:
+        await page.screenshot(path='IG_TimeoutError2.png')
+        text = ''
+        logger.error(f'IG 文案找不到標籤 請確認 IG 是否改版')
+        return(None, None)
+    
+    finally:
+        await page.close()
