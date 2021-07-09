@@ -122,9 +122,12 @@ class ProfileScraper:
             print(f'IG {url}已更新訂閱數: {self.sub_count}')
 
         return self.sub_count
+    
+
 
 
 async def subscribers(page, url):
+    #* get subscribers count with browser
 
     async def get_subcribers(page, url):
         '''取得訂閱數'''
