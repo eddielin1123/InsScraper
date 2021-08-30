@@ -1,4 +1,5 @@
 import re
+from numpy import histogram_bin_edges
 import requests
 from requests_html import HTMLSession
 from datetime import datetime
@@ -15,6 +16,7 @@ from .utils.logger import Logger
 from dotenv import load_dotenv
 import pymongo
 import os
+import emoji
 import pytz
 from .dataClass import commentNode, sharedData
 load_dotenv()
@@ -36,7 +38,8 @@ HASH_REG = re.compile(r'threadedComments\.parentByPostId.get\(n\)\.pagination,qu
 USERID_REG = re.compile(r'"instapp:owner_user_id" content="(\d+)"')  
 USERID_REG1 = re.compile(r'"logging_page_id":"profilePage_(\d+)"')
 HTAG_HTML_REG = re.compile(r'"instapp:hashtags" content="(.*?)"')
-TAG_CONTEXT_REG = re.compile(r'(@(?![\s|@]).*?)\s')
+HTAG_HTML_REG1 = re.compile(r'[\s\n](#(?![\s|@]))')
+TAG_CONTEXT_REG = re.compile(r'\s(@(?![\s|@])(?!gmail)(?!yahoo)(?!outlook)(?!hotmail).*?)\s')
 TAG_CONTEXT_REG1 = re.compile(r'(@(?![\s|@])\S*?)$')
 URL_REG = re.compile(r'(https?://.*?) ')
 XSRF = None
@@ -159,14 +162,16 @@ class InsPostScraper:
         
         # 貼文
         post_context = post['edge_media_to_caption']['edges'][0]['node']['text']
+        post_context = self._strQ2B(post_context)
 
         # #標籤
-        htags = ['#' + tag for tag in HTAG_HTML_REG.findall(html)]
+        # htags = ['#' + tag for tag in HTAG_HTML_REG.findall(html)]
+        htags = self._extract_hash_tag(post_context)
 
         # @標記
         tags = TAG_CONTEXT_REG.findall(post_context)
         if TAG_CONTEXT_REG1.search(post_context):
-            tag_end = TAG_CONTEXT_REG1.search(post_context)
+            tag_end = TAG_CONTEXT_REG1.search(post_context).group(1)
             tags.append(tag_end)
         
         # 網址
@@ -180,7 +185,7 @@ class InsPostScraper:
         
         # all links+tags
         hyperlinks = htags + tags + url_
-        hyperlinks = list(set(hyperlinks))
+        hyperlinks = list(hyperlinks)
         # print(hyperlinks)
         
         if len(tags) > 0:
@@ -193,23 +198,49 @@ class InsPostScraper:
         return {'context':post_context,
                 'hyperlinks':hyperlinks,
                 'hyperlinks_info':hyperlinks_info}
-    
-    
+      
     def get_comments(self, postId):
         # postId = url.split('/p/')[1].split('/')[0]
         url = f'{BASE_URL}/p/{postId}/'
-        api_url = f'https://www.instagram.com/graphql/query/'
+        first_page_url = url + '?__a=1'
+        api_url = f'{BASE_URL}/graphql/query/'
         c_count = 0
         output_json = []
         
+        # first page
+        html = self.async_get(first_page_url)
+        first_page_api = json.loads(html)
+        first_page_api = sharedData(first_page_api)
+        first_page, comment_count= self._comment_handler(first_page_api.comments)
+        output_json.extend(first_page)
+        c_count += comment_count
+
         html = self.async_get(url)
         shared_data = sharedData(self._shared_data(html))
         has_next_page = shared_data.has_next_page
-        for comment in shared_data.comments:
-            comment = commentNode(comment['node'])
-            c_count += 1
-            sub_comments = []
+        while has_next_page:
+            params = {
+                'query_hash':PARENT_COMMENT_HASH,
+                'variables':f'{{"shortcode":"{postId}","first":50,"after":"{shared_data.end_cursor}"}}'
+            }
             
+            api_json = json.loads(self.async_get(api_url, params=params))
+            shared_data = sharedData(api_json)
+            comments, comment_count= self._comment_handler(shared_data.comments)
+            has_next_page = shared_data.has_next_page
+
+            output_json.extend(comments)
+            c_count += comment_count
+
+        print(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
+        return output_json    
+    
+    def _comment_handler(self, comment_nodes):
+        output_json = []
+        c_count = 0
+        for comment in comment_nodes:
+            comment = commentNode(comment['node'])
+            sub_comments = []
             
             if len(comment.sub_comments) > 0:
                 for sc in comment.sub_comments:
@@ -217,7 +248,6 @@ class InsPostScraper:
                         sc = commentNode(sc['node'])
                     except KeyError:
                         print(sc)
-                    c_count += 1
                     sub_comments.append({
                         'author':sc.author,
                         'thumbnail':sc.thumbnail,
@@ -225,6 +255,7 @@ class InsPostScraper:
                         'likes':sc.likes,
                         'published_time':datetime.fromtimestamp(sc.timestamp),
                     })
+                    c_count += 1
                 
             output_json.append({
                         'author':comment.author,
@@ -234,31 +265,10 @@ class InsPostScraper:
                         'published_time':datetime.fromtimestamp(comment.timestamp),
                         'replies':sub_comments
                     })
-                
-        while has_next_page:
-            
-            params = {
-                'query_hash':PARENT_COMMENT_HASH,
-                'variables':f'{{"shortcode":"{postId}","first":50,"after":"{shared_data.end_cursor}"}}'
-            }
-            
-            api_json = json.loads(self.async_get(api_url, params=params))
-            shared_data = sharedData(api_json)
-            comments = shared_data.comments
-            has_next_page = shared_data.has_next_page
-            
-            for comment in comments:
-                comment = commentNode(comment['node'])
-                # print(comment.context)
-                c_count += 1
-                if len(comment.sub_comments) > 0:
-                    for comment in comment.sub_comments:
-                        c_count += 1
+            c_count += 1
 
-        logger.info(f'IG 留言 擷取成功:{postId}')
-        print(f'IG 留言 擷取成功:{postId}')
-        return output_json    
-    
+        return output_json, c_count
+
     def find_all_posts(self, url):
         #! 傳入網址只能是Profile page
         #TODO 一段時間的全部貼文 待開發
@@ -301,10 +311,8 @@ class InsPostScraper:
         posts = page['edges']
         has_next_page = page['page_info']['has_next_page'] # Booling
         
-        
         while True:
             for post in posts:
-                
                 if post['node']['shortcode'] == postId:
                     post_json = post['node']
                     return post_json
@@ -320,7 +328,17 @@ class InsPostScraper:
                         post_json = post['node']
                         return post_json
             
-        
+    def _extract_hash_tag(self, text):
+        htags = []
+        text = emoji.demojize(text, delimiters=(" ;;", ";;")) # remove emoji
+        text_groups = re.split(r'\\n|\s|\\|"', text) # split with space or break line or some shit
+        for t in text_groups:
+            regex = re.compile(r'([#＃](?![\s|@])\S+(?![\\"]))')
+            results = regex.findall(t)
+            if len(results) > 0:
+                htags.extend(results)
+        return htags
+
     def _tag_request(self, tags:str, hyperlinks_info:list) -> dict:
         
         for tag in tags:
@@ -328,11 +346,8 @@ class InsPostScraper:
             url = f'{BASE_URL}/{user_id}'
             html = self.async_get(url)
             shared_data = self._shared_data(html)
-            # with open("ig_debug.json", "w") as f:
-            #     json.dump(shared_data, f)
             full_name = shared_data['entry_data']['ProfilePage'][0]['graphql']['user']['full_name']
             # basic_info = self._basic_info(url, html)
-            
             hyperlinks_info.append({'tag':tag, 'user_name':full_name})
     
     def _basic_info(self, postId:str, html:str) -> dict:
@@ -429,6 +444,13 @@ class InsPostScraper:
 
         return self.html
     
+    @staticmethod
+    def _strQ2B(text):
+        """轉換全形htag/tag"""
+        text = text.replace('＠', '@')
+        text = text.replace('＃', '#')
+        return text
+
     @staticmethod              
     def _get_csrf():
         link = 'https://www.instagram.com/accounts/login/'
