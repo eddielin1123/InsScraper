@@ -1,12 +1,14 @@
 
 class sharedData:
-    def __init__(self, data:dict, comment_node:dict=None):
+    def __init__(self, data:dict):
         if data.get('data'):
             post_data = data['data']['shortcode_media']
-        else:
+        elif data.get('entry_data'):
             post_data = data['entry_data']['PostPage'][0]['graphql']['shortcode_media']
             self.shortcode = post_data['shortcode']
             self.post_context = post_data['edge_media_to_caption']['edges'][0]['node']['text']
+        elif data.get('graphql'):
+            post_data = data['graphql']['shortcode_media']
         
         self.has_next_page = post_data['edge_media_to_parent_comment']['page_info']['has_next_page']
         self.end_cursor = post_data['edge_media_to_parent_comment']['page_info']['end_cursor']
