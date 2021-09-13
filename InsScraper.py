@@ -39,7 +39,7 @@ USERID_REG = re.compile(r'"instapp:owner_user_id" content="(\d+)"')
 USERID_REG1 = re.compile(r'"logging_page_id":"profilePage_(\d+)"')
 HTAG_HTML_REG = re.compile(r'"instapp:hashtags" content="(.*?)"')
 HTAG_HTML_REG1 = re.compile(r'[\s\n](#(?![\s|@]))')
-TAG_CONTEXT_REG = re.compile(r'\s(@(?![\s|@])(?!gmail)(?!yahoo)(?!outlook)(?!hotmail).*?)\s')
+TAG_CONTEXT_REG = re.compile(r'\s?(@(?![\s|@])(?!gmail)(?!yahoo)(?!outlook)(?!hotmail).*?)\s')
 TAG_CONTEXT_REG1 = re.compile(r'(@(?![\s|@])\S*?)$')
 URL_REG = re.compile(r'(https?://.*?) ')
 XSRF = None
@@ -115,16 +115,20 @@ class InsPostScraper:
     def get_profile(self, postUrl:str):
         user = postUrl.split('com/')[1].split('/')[0]
         api_url = f'{BASE_URL}/{user}/{API_PARAMS}'
+        # print(api_url)
         html = self.async_get(api_url)
+        # print(html.encode)
         api_json = json.loads(html)
-        followers = api_json['graphql']['user']['edge_followed_by']['count']
-        self._update_db(postUrl, followers)
+        try:
+            followers = api_json['graphql']['user']['edge_followed_by']['count']
+            self._update_db(postUrl, followers)
 
-        logger.info(f'IG 訂閱數 更新成功:{followers} {postUrl}')
-        print(f'IG 訂閱數 更新成功:{followers} {postUrl}')
-
-        return {'subscribers':followers}
-
+            logger.info(f'IG 訂閱數 更新成功:{followers} {postUrl}')
+            print(f'IG 訂閱數 更新成功:{followers} {postUrl}')
+            return {'subscribers':followers}
+        except Exception:
+            return None
+        
     def post_info(self, postId:str):
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.async_get(api_url)
@@ -154,8 +158,14 @@ class InsPostScraper:
         url = f'{BASE_URL}/p/{postId}/'
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.async_get(api_url)
+
+        raw_html = self.async_get(url)
+        with open('ig_debug.html', 'w', encoding='utf-8') as f:
+            f.write(raw_html)
         
         api_json = json.loads(html)
+        # with open('ig_err', 'w', encoding='utf-8') as f:
+        #     json.dump(api_json, f)
         html = self.html = self.async_get(url)
         post = self.post_json = api_json['graphql']['shortcode_media']
         hyperlinks_info = []
@@ -163,6 +173,7 @@ class InsPostScraper:
         # 貼文
         post_context = post['edge_media_to_caption']['edges'][0]['node']['text']
         post_context = self._strQ2B(post_context)
+        post_context = self._htag_normalize(post_context)
 
         # #標籤
         # htags = ['#' + tag for tag in HTAG_HTML_REG.findall(html)]
@@ -286,7 +297,6 @@ class InsPostScraper:
         user_id = basic_info['user_id']
         print(user, user_name, user_id)
         
-        
         html = self.get(HASH_JS)
         hash = HASH_REG.search(html).group(1)
         
@@ -327,13 +337,22 @@ class InsPostScraper:
                     if post['node']['shortcode'] == postId:
                         post_json = post['node']
                         return post_json
-            
+    
+    def _htag_normalize(self, text):
+        def sub_repl_rule(match):
+            text = match.group(1)
+            text = re.sub('\s+', ' ', text)
+            return text
+
+        regex = re.compile(r'(#(?![\s|@])\S+\s{0,})')
+        return  re.sub(regex, sub_repl_rule, text)
+
     def _extract_hash_tag(self, text):
         htags = []
         text = emoji.demojize(text, delimiters=(" ;;", ";;")) # remove emoji
         text_groups = re.split(r'\\n|\s|\\|"', text) # split with space or break line or some shit
         for t in text_groups:
-            regex = re.compile(r'([#＃](?![\s|@])\S+(?![\\"]))')
+            regex = re.compile(r'([#＃](?![\s|@])\w+(?![\\"#]))')
             results = regex.findall(t)
             if len(results) > 0:
                 htags.extend(results)
