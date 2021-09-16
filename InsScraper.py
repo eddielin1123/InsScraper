@@ -511,18 +511,7 @@ class InsPostScraper:
     
     @staticmethod
     def _update_db(url, sub_count):
-        coll = pymongo.MongoClient(os.getenv('MONGOURI'))['NoxKol']['kol_ig']
+        coll = os.getenv('MONGO_COLL')
+        mongo = pymongo.MongoClient(os.getenv('MONGOURI'))[coll]['kol_ig']
         utc_now = datetime.now(tz=pytz.timezone('UTC')).astimezone(pytz.timezone('Asia/Taipei'))
-        coll.update_one({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
-
-        
-# start = time()
-# a = InsPostScraper(proxy=True)
-# a.login('peng_2415316', 'wendy0519')
-# from pprint import pprint
-
-# pprint(a.get_post('https://www.instagram.com/p/CPI01MXFN3c/'))
-# pprint(a.get_comments('https://www.instagram.com/p/CQWAecHJ8ZB/'))
-
-# end = time() - start
-# print(f'共花費{end}秒')
+        mongo.update_one({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
