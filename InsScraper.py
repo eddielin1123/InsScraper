@@ -10,7 +10,7 @@ import random
 from requests.exceptions import ProxyError
 import asyncio
 import aiohttp
-from time import time
+from pprint import pprint
 from datetime import datetime
 from .utils.logger import Logger
 from dotenv import load_dotenv
@@ -22,6 +22,8 @@ from .dataClass import commentNode, sharedData
 load_dotenv()
 logger = Logger()
 
+MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['kol_ig']
+
 BASE_URL = 'https://www.instagram.com'
 STATUS = None
 REFERER = None
@@ -30,8 +32,9 @@ PARENT_COMMENT_HASH = 'bc3296d1ce80a24b1b6e40b1e72903f5'
 HASH_JS = 'https://www.instagram.com/static/bundles/es6/ConsumerLibCommons.js/6d04e3c92d66.js' 
 COMMENT_JS = 'https://www.instagram.com/static/bundles/es6/Consumer.js/20e41358f066.js'
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
-SHARED_DATA_REG = re.compile(r'window._sharedData = (\{.*\});')
 
+
+SHARED_DATA_REG = re.compile(r'window._sharedData = (\{.*\});')
 USER_REG = re.compile(r'\(?@(.*?)\)? ')
 UNAME_REG = re.compile(r'<meta property="og:title" content="@?(.*?) ')
 HASH_REG = re.compile(r'threadedComments\.parentByPostId.get\(n\)\.pagination,queryId:"(.*?)"')
@@ -164,14 +167,15 @@ class InsPostScraper:
             f.write(raw_html)
         
         api_json = json.loads(html)
-        # with open('ig_err', 'w', encoding='utf-8') as f:
-        #     json.dump(api_json, f)
+        with open('ig_err', 'w', encoding='utf-8') as f:
+            json.dump(api_json, f)
         html = self.html = self.async_get(url)
         post = self.post_json = api_json['graphql']['shortcode_media']
         hyperlinks_info = []
         
         # 貼文
         post_context = post['edge_media_to_caption']['edges'][0]['node']['text']
+        pprint(post_context)
         post_context = self._strQ2B(post_context)
         post_context = self._htag_normalize(post_context)
 
@@ -339,9 +343,10 @@ class InsPostScraper:
                         return post_json
     
     def _htag_normalize(self, text):
+        '''為解決IG多空格會自動取代成一空格'''
         def sub_repl_rule(match):
             text = match.group(1)
-            text = re.sub('\s+', ' ', text)
+            text = re.sub(r' +', ' ', text)
             return text
 
         regex = re.compile(r'(#(?![\s|@])\S+\s{0,})')
@@ -511,9 +516,8 @@ class InsPostScraper:
     
     @staticmethod
     def _update_db(url, sub_count):
-        coll = pymongo.MongoClient(os.getenv('MONGOURI'))['NoxKol']['kol_ig']
         utc_now = datetime.now(tz=pytz.timezone('UTC')).astimezone(pytz.timezone('Asia/Taipei'))
-        coll.update_one({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
+        MONGO.update_one({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
 
         
 # start = time()

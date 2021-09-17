@@ -10,7 +10,7 @@ class Logger:
         logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(levelname)s: %(message)s',
                         datefmt=mst_now.strftime('%m/%d/%Y, %H:%M:%S'),
-                        handlers=[TimedRotatingFileHandler(f'/home/eddielin/ad_spiders/logs/{mst_now.strftime("%m-%d-%Y")}',when="D", interval=1, backupCount=15,
+                        handlers=[TimedRotatingFileHandler(f'/home/ubuntu/ad_spiders_alpha/logs/{mst_now.strftime("%m-%d-%Y")}',when="D", interval=1, backupCount=15,
                                                         encoding="UTF-8", delay=False),])
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
