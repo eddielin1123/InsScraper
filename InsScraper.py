@@ -517,7 +517,7 @@ class InsPostScraper:
     @staticmethod
     def _update_db(url, sub_count):
         utc_now = datetime.now(tz=pytz.timezone('UTC')).astimezone(pytz.timezone('Asia/Taipei'))
-        MONGO.update_one({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
+        MONGO.update_many({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
 
         
 # start = time()
