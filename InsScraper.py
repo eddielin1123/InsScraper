@@ -1,3 +1,4 @@
+import logging
 import re
 from numpy import histogram_bin_edges
 import requests
@@ -12,16 +13,15 @@ import asyncio
 import aiohttp
 from pprint import pprint
 from datetime import datetime
-from .utils.logger import Logger
 from dotenv import load_dotenv
 import pymongo
 import os
 import emoji
 import pytz
 from .dataClass import commentNode, sharedData
-load_dotenv()
-logger = Logger()
+from . import logger
 
+load_dotenv()
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['kol_ig']
 
 BASE_URL = 'https://www.instagram.com'
@@ -87,10 +87,9 @@ class InsPostScraper:
         
         if status['authenticated'] is True and status.get('oneTapPrompt'):
             self.is_login = True
-            print(f'IG 登入成功: {status}')
-            print(self.session.cookies)
+            logger.info(f'IG 登入成功: {status}')
         else:
-            print(f'IG 登入失敗: {status}')
+            logger.error(f'IG 登入失敗: {status}')
 
     def get(self, url:str, cookies:str=None, params:str=None) -> str:
         for i in range(10):
@@ -110,6 +109,7 @@ class InsPostScraper:
                     self.session.cookies = cookies
                 
                 if not 'Login • Instagram' in html and status == 200:
+                    logger.debug(f'Request {url}')
                     return html
                 
             except ProxyError as e:
@@ -118,16 +118,13 @@ class InsPostScraper:
     def get_profile(self, postUrl:str):
         user = postUrl.split('com/')[1].split('/')[0]
         api_url = f'{BASE_URL}/{user}/{API_PARAMS}'
-        # print(api_url)
         html = self.async_get(api_url)
-        # print(html.encode)
         api_json = json.loads(html)
         try:
             followers = api_json['graphql']['user']['edge_followed_by']['count']
             self._update_db(postUrl, followers)
 
             logger.info(f'IG 訂閱數 更新成功:{followers} {postUrl}')
-            print(f'IG 訂閱數 更新成功:{followers} {postUrl}')
             return {'subscribers':followers}
         except Exception:
             return None
@@ -148,8 +145,8 @@ class InsPostScraper:
         # 追蹤數
         followers = int(post['owner']['edge_followed_by']['count'])
 
+        logger.info(f'likes:{likes} | comments:{comments} | followers:{followers}')
         logger.info(f'IG 每日曲線 擷取成功:{postId}')
-        print(f'IG 每日曲線 擷取成功:{postId}')
 
         return {'likes':likes,
                 'comments':comments,
@@ -157,7 +154,6 @@ class InsPostScraper:
                 
     def get_post(self, postId:str) -> dict:
         
-        # postId = url.split('/p/')[1].split('/')[0]
         url = f'{BASE_URL}/p/{postId}/'
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.async_get(api_url)
@@ -165,14 +161,14 @@ class InsPostScraper:
         raw_html = self.async_get(url)
         with open('ig_debug.html', 'w', encoding='utf-8') as f:
             f.write(raw_html)
-        
+
         api_json = json.loads(html)
         with open('ig_err', 'w', encoding='utf-8') as f:
             json.dump(api_json, f)
         html = self.html = self.async_get(url)
         post = self.post_json = api_json['graphql']['shortcode_media']
         hyperlinks_info = []
-        
+
         # 貼文
         post_context = post['edge_media_to_caption']['edges'][0]['node']['text']
         pprint(post_context)
@@ -198,24 +194,20 @@ class InsPostScraper:
         # 留言數
         comments = int(post['edge_media_preview_comment']['count'])
         
-        # all links+tags
         hyperlinks = htags + tags + url_
         hyperlinks = list(hyperlinks)
-        # print(hyperlinks)
         
         if len(tags) > 0:
             self._tag_request(tags, hyperlinks_info)
-            # print(hyperlinks_info)
         
+        logger.info(f'htag:{hyperlinks} | tag:{hyperlinks_info}')
         logger.info(f'IG 文案 擷取成功:{postId}')
-        print(f'IG 文案 擷取成功:{postId}')
 
         return {'context':post_context,
                 'hyperlinks':hyperlinks,
                 'hyperlinks_info':hyperlinks_info}
       
     def get_comments(self, postId):
-        # postId = url.split('/p/')[1].split('/')[0]
         url = f'{BASE_URL}/p/{postId}/'
         first_page_url = url + '?__a=1'
         api_url = f'{BASE_URL}/graphql/query/'
@@ -233,6 +225,7 @@ class InsPostScraper:
         html = self.async_get(url)
         shared_data = sharedData(self._shared_data(html))
         has_next_page = shared_data.has_next_page
+        pages = 0
         while has_next_page:
             params = {
                 'query_hash':PARENT_COMMENT_HASH,
@@ -246,8 +239,9 @@ class InsPostScraper:
 
             output_json.extend(comments)
             c_count += comment_count
+            logger.debug(f'page: {page} done')
 
-        print(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
+        logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
         return output_json    
     
     def _comment_handler(self, comment_nodes):
@@ -438,6 +432,7 @@ class InsPostScraper:
                             return None
 
                         self.html = raw_html
+                        logger.debug(f'Request: {url}')
                         # self.cs_cookies = session.cookie_jar.filter_cookies("https://www.instagram.com")
                         return 'Done'
 
