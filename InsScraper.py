@@ -239,7 +239,7 @@ class InsPostScraper:
 
             output_json.extend(comments)
             c_count += comment_count
-            logger.debug(f'page: {page} done')
+            logger.debug(f'page: {pages} done')
 
         logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
         return output_json    
