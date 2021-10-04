@@ -19,9 +19,9 @@ import os
 import emoji
 import pytz
 from .dataClass import commentNode, sharedData
-load_dotenv()
-logger = logging.getLogger(__name__)
+from . import logger
 
+load_dotenv()
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['kol_ig']
 
 BASE_URL = 'https://www.instagram.com'
