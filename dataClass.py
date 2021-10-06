@@ -17,6 +17,7 @@ class sharedData:
         
 class commentNode:
     def __init__(self, comment_node:dict):
+        self.comment_id = comment_node['id']
         self.author = comment_node['owner']['username']
         self.thumbnail = comment_node['owner']['profile_pic_url']
         self.context = comment_node['text']

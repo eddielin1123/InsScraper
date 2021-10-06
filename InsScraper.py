@@ -2,6 +2,7 @@ import logging
 import re
 from numpy import histogram_bin_edges
 import requests
+from requests.sessions import default_headers
 from requests_html import HTMLSession
 from datetime import datetime
 from time import sleep
@@ -23,7 +24,6 @@ from . import logger
 
 load_dotenv()
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['kol_ig']
-
 BASE_URL = 'https://www.instagram.com'
 STATUS = None
 REFERER = None
@@ -51,13 +51,25 @@ class InsPostScraper:
     '''
     抓取IG貼文
     '''
+    
+    default_headers = {
+        'Accept-Language': 'en-US',
+        'User-Agent': USER_AGENT,
+        'Sec-Fetch-User': '?1',
+        'sec-fetch-dest':'document'
+    }
+    
     def __init__(self, session=None, proxy=False):
         if session is None:
-            session = HTMLSession()
+            self.session = HTMLSession()
+        else:
+            self.session = session
+            
         if proxy:
-            session.proxies = self._rotate_proxy()
-        
-        self.session = session
+            self.session.proxies = self._rotate_proxy()
+            
+        self.session.headers.update(self.default_headers)
+        self.session.trust_env = False
         self.proxy = self.session.proxies
         self.params = None
         self.cs_cookies = None
@@ -93,14 +105,8 @@ class InsPostScraper:
 
     def get(self, url:str, cookies:str=None, params:str=None) -> str:
         for i in range(10):
+            self.session.proxies = self._rotate_proxy()
             try:
-                port_digits = [str(i) for i in range(401)]
-                port_digits = [(len(str(401))-len(digit))*'0'+digit for digit in port_digits]
-                port = random.choice(port_digits)
-                
-                if self.proxy:
-                    self.session.proxies = {'http':f'http://F3JZJYifgvqVCHbd:wifi;@23.109.55.164:9{port}', 'https':f'https://F3JZJYifgvqVCHbd:wifi;tw;@23.109.55.164:9{port}'}
-                
                 resp = self.session.get(url, params=params)
                 status = resp.status_code
                 html = resp.html.html
@@ -108,11 +114,19 @@ class InsPostScraper:
                 if not cookies is None:
                     self.session.cookies = cookies
                 
-                if not 'Login • Instagram' in html and status == 200:
+                if 'Login • Instagram' in html:
+                    logger.warning(f'要求登入 | retry:{i}')
+                    continue
+                elif status != 200:
+                    logger.debug(html)
+                    logger.warning(f'訪問失敗 Status:{status} | retry:{i}')
+                    continue
+                else:
                     logger.debug(f'Request {url}')
-                    return html
+                    return html                    
                 
             except ProxyError as e:
+                logger.exception(f'Proxy Error | retry:{i}')
                 continue
     
     def get_profile(self, postUrl:str):
@@ -120,13 +134,19 @@ class InsPostScraper:
         api_url = f'{BASE_URL}/{user}/{API_PARAMS}'
         html = self.async_get(api_url)
         api_json = json.loads(html)
+        
+        page_description = api_json.get('description', None)
+        if page_description:
+            if 'You must be 13 years old' in page_description:
+                logger.error('訪問錯誤: 該帳號有年齡訪問限制')
+                return {'description':page_description}
         try:
             followers = api_json['graphql']['user']['edge_followed_by']['count']
             self._update_db(postUrl, followers)
-
             logger.info(f'IG 訂閱數 更新成功:{followers} {postUrl}')
             return {'subscribers':followers}
         except Exception:
+            logger.exception('get_profile exception')
             return None
         
     def post_info(self, postId:str):
@@ -208,38 +228,49 @@ class InsPostScraper:
                 'hyperlinks_info':hyperlinks_info}
       
     def get_comments(self, postId):
-        url = f'{BASE_URL}/p/{postId}/'
-        first_page_url = url + '?__a=1'
-        api_url = f'{BASE_URL}/graphql/query/'
+        global REFERER
+        url = REFERER = f'{BASE_URL}/p/{postId}/'
+                
         c_count = 0
         output_json = []
         
-        # first page
-        html = self.async_get(first_page_url)
-        first_page_api = json.loads(html)
-        first_page_api = sharedData(first_page_api)
-        first_page, comment_count= self._comment_handler(first_page_api.comments)
-        output_json.extend(first_page)
-        c_count += comment_count
-
-        html = self.async_get(url)
-        shared_data = sharedData(self._shared_data(html))
-        has_next_page = shared_data.has_next_page
-        pages = 0
+        self._is_login() # 確認登入
+        
+        pages = 1
+        has_next_page = True
+        end_cursor = None
         while has_next_page:
             params = {
                 'query_hash':PARENT_COMMENT_HASH,
-                'variables':f'{{"shortcode":"{postId}","first":50,"after":"{shared_data.end_cursor}"}}'
+                'variables':json.dumps({"shortcode":postId,"first":12,"after":end_cursor})
             }
+            if pages > 1:
+                url = f'{BASE_URL}/graphql/query/'
+                response = self.get(url, params=params)
+            else:
+                response = self.get(url)
+                
+            try:
+                api_json = json.loads(response)
+                shared_data = sharedData(api_json)
+            except Exception:
+                init_json = self._init_data(postId, response)
+                shared_data = sharedData(init_json)
             
-            api_json = json.loads(self.async_get(api_url, params=params))
-            shared_data = sharedData(api_json)
+            next_cursor = shared_data.end_cursor # 下一頁cursor
+            
+            if next_cursor == end_cursor:
+                logger.warning('end_cursor重複')
+                break
+            
+            end_cursor = next_cursor
             comments, comment_count= self._comment_handler(shared_data.comments)
             has_next_page = shared_data.has_next_page
 
             output_json.extend(comments)
             c_count += comment_count
             logger.debug(f'page: {pages} done')
+            pages += 1
 
         logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
         return output_json    
@@ -256,15 +287,16 @@ class InsPostScraper:
                     try:
                         sc = commentNode(sc['node'])
                     except KeyError:
-                        print(sc)
-                    sub_comments.append({
-                        'author':sc.author,
-                        'thumbnail':sc.thumbnail,
-                        'context':sc.context,
-                        'likes':sc.likes,
-                        'published_time':datetime.fromtimestamp(sc.timestamp),
-                    })
-                    c_count += 1
+                        logger.exception(sc)
+                    if not comment.comment_id == sc.comment_id:
+                        sub_comments.append({
+                            'author':sc.author,
+                            'thumbnail':sc.thumbnail,
+                            'context':sc.context,
+                            'likes':sc.likes,
+                            'published_time':datetime.fromtimestamp(sc.timestamp),
+                        })
+                        c_count += 1
                 
             output_json.append({
                         'author':comment.author,
@@ -275,7 +307,7 @@ class InsPostScraper:
                         'replies':sub_comments
                     })
             c_count += 1
-
+        pprint(output_json)
         return output_json, c_count
 
     def find_all_posts(self, url):
@@ -409,6 +441,7 @@ class InsPostScraper:
                 if not REFERER is None:
                     # referer = REFERER
                     headers.update({'Referer':REFERER})
+                    print(REFERER)
                 else:
                     # referer = BASE_URL
                     headers.update({'Referer':BASE_URL})
@@ -418,16 +451,17 @@ class InsPostScraper:
                     
                 # Start request
                 async with aiohttp.ClientSession(trust_env=False, headers=headers) as session:
-                    if not self.cs_cookies is None:
-                        session.cookie_jar = self.cs_cookies
+                    # if not self.cs_cookies is None:
+                    #     session.cookie_jar = self.cs_cookies
                     async with session.get(url, proxy=proxy, params=params) as response:
                         raw_html = await response.text()
-
-                        if 'Login • Instagram' in raw_html: 
+                        if 'Login • Instagram' in raw_html or '登入 • Instagram' in raw_html: 
+                            logger.debug('async_get: 要求登入頁面')
                             await asyncio.sleep(10)
                             return None
                         elif not response.status == 200:
                             STATUS = response.status
+                            logger.debug(f'Error Status: {STATUS}')
                             await asyncio.sleep(10)
                             return None
 
@@ -439,6 +473,7 @@ class InsPostScraper:
             except Exception:
                 await asyncio.sleep(10)
                 return None
+            
 
         async def task_manager():
             #* Cancel others tasks when first task completed 
@@ -462,6 +497,11 @@ class InsPostScraper:
         loop.run_until_complete(task_manager())
 
         return self.html
+    
+    def _is_login(self):
+        if 'ds_user_id' not in self.session.cookies:
+            logger.info('IG 尚未登入')
+            
     
     @staticmethod
     def _strQ2B(text):
@@ -488,6 +528,8 @@ class InsPostScraper:
         assert isinstance(init_json, dict)
         return init_json
     
+    
+    
     @staticmethod
     def _shared_data(html):
         #* profile page
@@ -501,12 +543,12 @@ class InsPostScraper:
     
     @staticmethod
     def _rotate_proxy(async_access=False):
-        proxy = random.choice([f'F3JZJYifgvqVCHbd:wifi;@23.109.55.164:{n}'for n in range(9000, 9401)])
+        proxy = random.choice([f'F3JZJYifgvqVCHbd:wifi;@proxy.soax.com:{n}'for n in range(9000, 9401)])
         proxies = {'http':f'http://{proxy}', 'https':f'https://{proxy}'}
         
         if async_access:
             proxies = f'http://{proxy}'
-        
+        logger.debug(f'Using proxy: {proxy}')
         return proxies
     
     @staticmethod
