@@ -4,14 +4,19 @@ import os
 import json
 from dotenv import load_dotenv
 
-load_dotenv()
-def set_cookies(cookies_dict:dict=None, lang:str='en'):
+dir_path = os.path.dirname(os.path.abspath(__file__))
+path = os.path.join(dir_path, '.env')
+load_dotenv(path)
+
+def set_cookies(cookies_dict:dict=None, platform:str='ig'):
     if cookies_dict is None:
+        
         try:
-            if 'en' in lang:
-                f = open(os.getenv('COOKIES_CH'), 'r')
-            if 'ch' in lang:
-                f = open(os.getenv('COOKIES_CH'), 'r')
+            if 'fb' in platform:
+                f = open(os.getenv('COOKIES_FB'), 'r')
+            if 'ig' in platform:
+                f = open(os.getenv('COOKIES_IG'), 'r')
+
             cookies_dict = json.loads(f.read())
         except Exception as e:
             # print(e)
@@ -24,6 +29,7 @@ def set_cookies(cookies_dict:dict=None, lang:str='en'):
         except KeyError:
             continue
     return jar
+
 
 def test_session(cookies_jar):
     jar = set_cookies(cookies_jar)
