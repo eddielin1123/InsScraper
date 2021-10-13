@@ -257,6 +257,10 @@ class InsPostScraper:
                 init_json = self._init_data(postId, response)
                 shared_data = sharedData(init_json)
             
+            # 先新增留言再查看下一頁
+            comments, comment_count= self._comment_handler(shared_data.comments)
+            output_json.extend(comments)
+
             next_cursor = shared_data.end_cursor # 下一頁cursor
             
             if next_cursor == end_cursor:
@@ -264,10 +268,9 @@ class InsPostScraper:
                 break
             
             end_cursor = next_cursor
-            comments, comment_count= self._comment_handler(shared_data.comments)
+            
             has_next_page = shared_data.has_next_page
 
-            output_json.extend(comments)
             c_count += comment_count
             logger.debug(f'page: {pages} done')
             pages += 1
