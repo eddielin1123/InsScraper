@@ -1,8 +1,14 @@
 
+from requests.api import post
+
+
 class sharedData:
     def __init__(self, data:dict):
         if data.get('data'):
-            post_data = data['data']['shortcode_media']
+            try:
+                post_data = data['data']['shortcode_media']
+            except KeyError:
+                post_data = data['data']['comment']
         elif data.get('entry_data'):
             post_data = data['entry_data']['PostPage'][0]['graphql']['shortcode_media']
             self.shortcode = post_data['shortcode']
@@ -10,10 +16,15 @@ class sharedData:
         elif data.get('graphql'):
             post_data = data['graphql']['shortcode_media']
         
-        self.has_next_page = post_data['edge_media_to_parent_comment']['page_info']['has_next_page']
-        self.end_cursor = post_data['edge_media_to_parent_comment']['page_info']['end_cursor']
-        self.comments = post_data['edge_media_to_parent_comment']['edges']
-        self.comments_count = post_data['edge_media_to_parent_comment']['count']
+        try:
+            post_data = post_data['edge_media_to_parent_comment']
+        except KeyError:
+            post_data = post_data['edge_threaded_comments']
+        
+        self.has_next_page = post_data['page_info']['has_next_page']
+        self.end_cursor = post_data['page_info']['end_cursor']
+        self.comments = post_data['edges']
+        self.comments_count = post_data['count']
         
 class commentNode:
     def __init__(self, comment_node:dict):
@@ -26,3 +37,7 @@ class commentNode:
         
         if comment_node.get('edge_threaded_comments'):
             self.sub_comments = comment_node['edge_threaded_comments']['edges']
+            self.sub_end_cursor = comment_node['edge_threaded_comments']['page_info']['end_cursor']
+        else:
+            self.sub_comments = []
+        

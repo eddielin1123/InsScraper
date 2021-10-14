@@ -5,7 +5,7 @@ import requests
 from requests.sessions import default_headers
 from requests_html import HTMLSession
 from datetime import datetime
-from time import sleep
+from time import sleep, thread_time
 from urllib.parse import urlencode, quote
 import json
 import random
@@ -22,6 +22,8 @@ import pytz
 from .dataClass import commentNode, sharedData
 from . import logger
 
+print(logging.getLevelName(logger.getEffectiveLevel()))
+
 load_dotenv()
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['kol_ig']
 BASE_URL = 'https://www.instagram.com'
@@ -29,6 +31,7 @@ STATUS = None
 REFERER = None
 API_PARAMS = '?__a=1' #!
 PARENT_COMMENT_HASH = 'bc3296d1ce80a24b1b6e40b1e72903f5'
+THREAD_COMMENT_HASH = '1ee91c32fc020d44158a3192eda98247'
 HASH_JS = 'https://www.instagram.com/static/bundles/es6/ConsumerLibCommons.js/6d04e3c92d66.js' 
 COMMENT_JS = 'https://www.instagram.com/static/bundles/es6/Consumer.js/20e41358f066.js'
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
@@ -46,6 +49,7 @@ TAG_CONTEXT_REG = re.compile(r'\s?(@(?![\s|@])(?!gmail)(?!yahoo)(?!outlook)(?!ho
 TAG_CONTEXT_REG1 = re.compile(r'(@(?![\s|@])\S*?)$')
 URL_REG = re.compile(r'(https?://.*?) ')
 XSRF = None
+
 
 class InsPostScraper:
     '''
@@ -177,14 +181,8 @@ class InsPostScraper:
         url = f'{BASE_URL}/p/{postId}/'
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.async_get(api_url)
-
-        raw_html = self.async_get(url)
-        with open('ig_debug.html', 'w', encoding='utf-8') as f:
-            f.write(raw_html)
-
         api_json = json.loads(html)
-        with open('ig_err', 'w', encoding='utf-8') as f:
-            json.dump(api_json, f)
+
         html = self.html = self.async_get(url)
         post = self.post_json = api_json['graphql']['shortcode_media']
         hyperlinks_info = []
@@ -217,7 +215,7 @@ class InsPostScraper:
         hyperlinks = htags + tags + url_
         hyperlinks = list(hyperlinks)
         
-        if len(tags) > 0:
+        if len(tags) > 0: # 訪問@帳號
             self._tag_request(tags, hyperlinks_info)
         
         logger.info(f'htag:{hyperlinks} | tag:{hyperlinks_info}')
@@ -226,89 +224,124 @@ class InsPostScraper:
         return {'context':post_context,
                 'hyperlinks':hyperlinks,
                 'hyperlinks_info':hyperlinks_info}
-      
-    def get_comments(self, postId):
-        global REFERER
+    
+    def _comments_iter(self, postId:str, cursor:str=None):
+        '''
+        敘述: 留言換頁產生器
+        
+        Params:
+            postId: IG文章編號
+            cursor: 下一頁所需Cursor, 預設為None
+        
+        '''
+        
         url = REFERER = f'{BASE_URL}/p/{postId}/'
+        page = 1
+        has_next_page = True
+        
+        end_cursor = cursor
+        while has_next_page:
+            params = {
+                'query_hash':PARENT_COMMENT_HASH, # Hash為固定
+                'variables':json.dumps({"shortcode":postId,"first":12,"after":end_cursor})
+            }
+            if page > 1:
+                url = f'{BASE_URL}/graphql/query/'
+                response = self.get(url, params=params)
+            else:
+                response = self.get(url) # 第一頁無須帶Params
                 
+            try:
+                api_json = json.loads(response) # 預設response為json，若為HTML則進入Exception另外萃取
+                shared_data = sharedData(api_json)
+            except Exception:
+                init_json = self._init_data(postId, response)
+                shared_data = sharedData(init_json)
+
+            for i, comment in enumerate(shared_data.comments): # 確認子留言存在 並while迭代取出
+                try:
+                    end_cursor = comment['node']['edge_threaded_comments']['page_info']['end_cursor']
+                except KeyError:
+                    end_cursor = None
+                
+                while end_cursor: # 子留言換頁
+                    params = {
+                                'query_hash':THREAD_COMMENT_HASH, # Hash為固定
+                                'variables':json.dumps({"comment_id":comment['node']['id'], "first":6, "after":end_cursor})
+                            }
+                    url = f'{BASE_URL}/graphql/query/'
+                    response = self.get(url, params=params)
+                    try:
+                        replies_data = sharedData(json.loads(response))
+                    except Exception:
+                        replies_data = sharedData(self._init_data(postId, response))
+
+                    replies = replies_data.comments
+                    shared_data.comments[i]['node']['edge_threaded_comments']['edges'].extend(replies) # 將子留言node回存至母留言的json
+                    
+                    end_cursor = replies_data.end_cursor
+                                
+            yield shared_data.comments # -> List
+            
+            next_cursor = shared_data.end_cursor # 下一頁cursor
+            
+            if next_cursor == end_cursor: # 避免IG重複翻頁顯示相同內容
+                logger.warning('end_cursor重複 換頁終止')
+                break
+
+            end_cursor = next_cursor
+            has_next_page = shared_data.has_next_page
+
+            logger.debug(f'page: {page} done')
+            page += 1
+            sleep(random.uniform(1, 2))
+
+    
+    def _comment_content(self, comment:commentNode):
+        '''
+        敘述: 回傳單筆留言內容
+        
+        Params:
+            comment: dataClass.py內的commentNode物件
+        '''
+        return {
+                    'author':comment.author,
+                    'thumbnail':comment.thumbnail,
+                    'context':comment.context,
+                    'likes':comment.likes,
+                    'published_time':datetime.fromtimestamp(comment.timestamp)
+                }
+            
+    def get_comments(self, postId:str):
+        '''
+        敘述: 取得文章所有留言的主方法
+        
+        Params:
+            postId: IG文章編號
+        '''
+        global REFERER                
         c_count = 0
         output_json = []
         
         self._is_login() # 確認登入
         
-        pages = 1
-        has_next_page = True
-        end_cursor = None
-        while has_next_page:
-            params = {
-                'query_hash':PARENT_COMMENT_HASH,
-                'variables':json.dumps({"shortcode":postId,"first":12,"after":end_cursor})
-            }
-            if pages > 1:
-                url = f'{BASE_URL}/graphql/query/'
-                response = self.get(url, params=params)
-            else:
-                response = self.get(url)
-                
-            try:
-                api_json = json.loads(response)
-                shared_data = sharedData(api_json)
-            except Exception:
-                init_json = self._init_data(postId, response)
-                shared_data = sharedData(init_json)
-            
-            next_cursor = shared_data.end_cursor # 下一頁cursor
-            
-            if next_cursor == end_cursor:
-                logger.warning('end_cursor重複')
-                break
-            
-            end_cursor = next_cursor
-            comments, comment_count= self._comment_handler(shared_data.comments)
-            has_next_page = shared_data.has_next_page
-
-            output_json.extend(comments)
-            c_count += comment_count
-            logger.debug(f'page: {pages} done')
-            pages += 1
-
-        logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
-        return output_json    
-    
-    def _comment_handler(self, comment_nodes):
-        output_json = []
-        c_count = 0
-        for comment in comment_nodes:
-            comment = commentNode(comment['node'])
-            sub_comments = []
-            
-            if len(comment.sub_comments) > 0:
-                for sc in comment.sub_comments:
-                    try:
-                        sc = commentNode(sc['node'])
-                    except KeyError:
-                        logger.exception(sc)
-                    if not comment.comment_id == sc.comment_id:
-                        sub_comments.append({
-                            'author':sc.author,
-                            'thumbnail':sc.thumbnail,
-                            'context':sc.context,
-                            'likes':sc.likes,
-                            'published_time':datetime.fromtimestamp(sc.timestamp),
-                        })
+        for comments in self._comments_iter(postId): # 呼叫換頁產生器
+            for comment in comments: # 迭代所有留言
+                comment_ = commentNode(comment['node'])
+                comment_dict = self._comment_content(comment_)
+                replies = []
+                if len(comment_.sub_comments) > 1: # 確認子留言存在
+                    for reply in comment_.sub_comments:
+                        reply_node = commentNode(reply['node'])
+                        reply = self._comment_content(reply_node)
+                        replies.append(reply)
                         c_count += 1
-                
-            output_json.append({
-                        'author':comment.author,
-                        'thumbnail':comment.thumbnail,
-                        'context':comment.context,
-                        'likes':comment.likes,
-                        'published_time':datetime.fromtimestamp(comment.timestamp),
-                        'replies':sub_comments
-                    })
-            c_count += 1
-        pprint(output_json)
-        return output_json, c_count
+                comment_dict.update({'replies':replies})
+                output_json.append(comment_dict)
+                c_count += 1
+        
+        logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
+        return output_json
 
     def find_all_posts(self, url):
         #! 傳入網址只能是Profile page
@@ -369,7 +402,7 @@ class InsPostScraper:
                         return post_json
     
     def _htag_normalize(self, text):
-        '''為解決IG多空格會自動取代成一空格'''
+        '''解決IG多空格會自動取代成一空格'''
         def sub_repl_rule(match):
             text = match.group(1)
             text = re.sub(r' +', ' ', text)
@@ -556,14 +589,3 @@ class InsPostScraper:
         utc_now = datetime.now(tz=pytz.timezone('UTC')).astimezone(pytz.timezone('Asia/Taipei'))
         MONGO.update_many({'ig_url':url}, {'$set':{'subscribers':int(sub_count), 'updated_at':utc_now}})
 
-        
-# start = time()
-# a = InsPostScraper(proxy=True)
-# a.login('peng_2415316', 'wendy0519')
-# from pprint import pprint
-
-# pprint(a.get_post('https://www.instagram.com/p/CPI01MXFN3c/'))
-# pprint(a.get_comments('https://www.instagram.com/p/CQWAecHJ8ZB/'))
-
-# end = time() - start
-# print(f'共花費{end}秒')
