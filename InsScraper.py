@@ -283,6 +283,10 @@ class InsPostScraper:
                                 
             yield shared_data.comments # -> List
             
+            # 先新增留言再查看下一頁
+            comments, comment_count= self._comment_handler(shared_data.comments)
+            output_json.extend(comments)
+
             next_cursor = shared_data.end_cursor # 下一頁cursor
             
             if next_cursor == end_cursor: # 避免IG重複翻頁顯示相同內容
