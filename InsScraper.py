@@ -1,12 +1,10 @@
 import logging
 import re
-from numpy import histogram_bin_edges
 import requests
-from requests.sessions import default_headers
 from requests_html import HTMLSession
 from datetime import datetime
-from time import sleep, thread_time
-from urllib.parse import urlencode, quote
+from time import sleep
+from urllib.parse import quote
 import json
 import random
 from requests.exceptions import ProxyError
@@ -21,6 +19,12 @@ import emoji
 import pytz
 from .dataClass import commentNode, sharedData
 from . import logger
+from .util import (
+    get_comment_text,
+    word_cloud,
+    upload_on_aws,
+    word_frequency
+)
 
 print(logging.getLevelName(logger.getEffectiveLevel()))
 
@@ -250,14 +254,21 @@ class InsPostScraper:
                 response = self.get(url, params=params)
             else:
                 response = self.get(url) # 第一頁無須帶Params
+            
+            with open(f'ig_page{page}.html', 'w', encoding='utf-8') as f:
+                f.write(response)
                 
             try:
                 api_json = json.loads(response) # 預設response為json，若為HTML則進入Exception另外萃取
                 shared_data = sharedData(api_json)
+                
             except Exception:
                 init_json = self._init_data(postId, response)
                 shared_data = sharedData(init_json)
 
+            if not len(shared_data.comments) > 1:
+                break
+            
             for i, comment in enumerate(shared_data.comments): # 確認子留言存在 並while迭代取出
                 try:
                     end_cursor = comment['node']['edge_threaded_comments']['page_info']['end_cursor']
@@ -280,10 +291,11 @@ class InsPostScraper:
                     shared_data.comments[i]['node']['edge_threaded_comments']['edges'].extend(replies) # 將子留言node回存至母留言的json
                     
                     end_cursor = replies_data.end_cursor
-                                
+            
             yield shared_data.comments # -> List
             
             next_cursor = shared_data.end_cursor # 下一頁cursor
+            logger.debug(f'next_cursor: {next_cursor}')
             
             if next_cursor == end_cursor: # 避免IG重複翻頁顯示相同內容
                 logger.warning('end_cursor重複 換頁終止')
@@ -340,8 +352,17 @@ class InsPostScraper:
                 output_json.append(comment_dict)
                 c_count += 1
         
+        all_text = get_comment_text(output_json)
+        image_path = word_cloud(all_text, file_name='word_cloud.png')
+        wd_url = upload_on_aws(origin_url=postId, local_file=image_path)
+        wd_frequency = word_frequency(all_text)
+        
         logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
-        return output_json
+        return {
+            'comments':output_json,
+            'wordcloud_url':wd_url,
+            'word_frequency':wd_frequency
+            }
 
     def find_all_posts(self, url):
         #! 傳入網址只能是Profile page
