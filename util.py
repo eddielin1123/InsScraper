@@ -48,19 +48,23 @@ def set_cookies(cookies_dict:dict=None, platform:str='ig'):
     return jar
 
 def word_frequency(text:str) -> dict:
-    text = re.sub(r'\W*', "", text)
-    with open(os.path.join(dir_path, 'stop_words.txt'), 'r', encoding='utf-8') as f:
-        stop_words = f.read().splitlines()
-        
-    counting = {}
-    words = jieba.cut(text, cut_all=False, HMM=True)
-    for word in words:
-        if word not in stop_words:
-            counting[word] = counting.get(word,0) + 1
+    try:
+        text = re.sub(r'\W*', "", text)
+        with open(os.path.join(dir_path, 'stop_words.txt'), 'r', encoding='utf-8') as f:
+            stop_words = f.read().splitlines()
+            
+        counting = {}
+        words = jieba.cut(text, cut_all=False, HMM=True)
+        for word in words:
+            if word not in stop_words:
+                counting[word] = counting.get(word,0) + 1
 
-    rank = sorted(counting.items(), key=lambda item: item[1], reverse=True)
-    return dict(rank[:5])
-
+        rank = sorted(counting.items(), key=lambda item: item[1], reverse=True)
+        return dict(rank[:5])
+    except Exception:
+        logger.exception('word_frequency_exception')
+        return None
+    
 def get_comment_text(comments:list) -> str:
     text = ''
     if comments:
@@ -82,26 +86,34 @@ def get_comment_text(comments:list) -> str:
     for word in words:
         if word not in stop_words:
             word_list.append(word)
-    words = ' '.join(word_list)
     
-    return words
+    if len(word_list) > 1:
+        words = ' '.join(word_list)
+        return words
+    else:
+        return None
 
 def word_cloud(text, file_name):
-    # text = "square" #輸入你要的單詞 
-    x, y = np.ogrid[:300, :300] #快速產生一對陣列 產生一個以(150,150)為圓心,半徑為130的圓形mask 
-    mask = (x - 150) ** 2 + (y - 150) ** 2 > 130 ** 2 #此時mask是bool型 
-    mask = 255 * mask.astype(int) #變數型別轉換為int型 
-    
-    wc = WordCloud(
-        font_path=os.path.join(dir_path, 'pingfun.ttf'),
-        background_color="white", #背景顏色為“白色” 
-        repeat=True, #單詞可以重複 
-        mask=mask #指定形狀，就是剛剛生成的圓形 
-    ) 
-    wc.generate(text) #從文字生成wordcloud 
-    path = dir_path + '/images/' + file_name
-    wc.to_file(path)
-    return path
+    try:
+        if not len(text) > 1:
+            raise Exception('input text is empty')
+        
+        x, y = np.ogrid[:300, :300] #快速產生一對陣列 產生一個以(150,150)為圓心,半徑為130的圓形mask 
+        mask = (x - 150) ** 2 + (y - 150) ** 2 > 130 ** 2 #此時mask是bool型 
+        mask = 255 * mask.astype(int) #變數型別轉換為int型 
+        wc = WordCloud(
+            font_path=os.path.join(dir_path, 'pingfun.ttf'),
+            background_color="white", #背景顏色為“白色” 
+            repeat=True, #單詞可以重複 
+            mask=mask #指定形狀，就是剛剛生成的圓形 
+        ) 
+        wc.generate(text) #從文字生成wordcloud 
+        path = dir_path + '/images/' + file_name
+        wc.to_file(path)
+        return path
+    except Exception:
+        logger.exception('word_cloud_exception')
+        return None
 
 def upload_on_aws(local_file:str, origin_url:str):
     s3 = boto3.client('s3', 

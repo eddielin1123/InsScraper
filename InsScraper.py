@@ -353,9 +353,9 @@ class InsPostScraper:
                 c_count += 1
         
         all_text = get_comment_text(output_json)
-        image_path = word_cloud(all_text, file_name='word_cloud.png')
-        wd_url = upload_on_aws(origin_url=postId, local_file=image_path)
         wd_frequency = word_frequency(all_text)
+        image_path = word_cloud(all_text, file_name='word_cloud.png')
+        wd_url = upload_on_aws(origin_url=postId, local_file=image_path) if all_text else None
         
         logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
         return {
