@@ -159,8 +159,9 @@ class InsPostScraper:
         
     def post_info(self, postId:str):
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
-        html = self.async_get(api_url)
-
+        html = self.get(api_url)
+        with open('ig_basic_info.html', 'w', encoding='utf-8') as f:
+            f.write(html)
         api_json = json.loads(html)
         post = self.post_json = api_json['graphql']['shortcode_media']
 
@@ -255,8 +256,8 @@ class InsPostScraper:
             else:
                 response = self.get(url) # 第一頁無須帶Params
             
-            with open(f'ig_page{page}.html', 'w', encoding='utf-8') as f:
-                f.write(response)
+            # with open(f'ig_page{page}.html', 'w', encoding='utf-8') as f:
+            #     f.write(response)
                 
             try:
                 api_json = json.loads(response) # 預設response為json，若為HTML則進入Exception另外萃取
@@ -353,15 +354,15 @@ class InsPostScraper:
                 c_count += 1
         
         all_text = get_comment_text(output_json)
-        wd_frequency = word_frequency(all_text)
-        image_path = word_cloud(all_text, file_name='word_cloud.png')
+        ranked_freq, origin_freq = word_frequency(all_text)
+        image_path = word_cloud(origin_freq, file_name='word_cloud.png')
         wd_url = upload_on_aws(origin_url=postId, local_file=image_path) if all_text else None
         
         logger.info(f'IG 留言 擷取成功:{postId} 共有{c_count}筆')
         return {
             'comments':output_json,
             'wordcloud_url':wd_url,
-            'word_frequency':wd_frequency
+            'word_frequency':ranked_freq
             }
 
     def find_all_posts(self, url):
