@@ -1,5 +1,6 @@
 import logging
 import re
+from pymongo import results
 import requests
 from requests_html import HTMLSession
 from datetime import datetime
@@ -185,16 +186,15 @@ class InsPostScraper:
         
         url = f'{BASE_URL}/p/{postId}/'
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
-        html = self.async_get(api_url)
+        html = self.get(api_url)
         api_json = json.loads(html)
 
-        html = self.html = self.async_get(url)
+        # html = self.html = self.get(url)
         post = self.post_json = api_json['graphql']['shortcode_media']
         hyperlinks_info = []
 
         # 貼文
         post_context = post['edge_media_to_caption']['edges'][0]['node']['text']
-        pprint(post_context)
         post_context = self._strQ2B(post_context)
         post_context = self._htag_normalize(post_context)
 
@@ -256,7 +256,7 @@ class InsPostScraper:
             else:
                 response = self.get(url) # 第一頁無須帶Params
             
-            # with open(f'ig_page{page}.html', 'w', encoding='utf-8') as f:
+            # with open(f'./ig_page{page}.html', 'w', encoding='utf-8') as f:
             #     f.write(response)
                 
             try:
@@ -311,7 +311,7 @@ class InsPostScraper:
 
             logger.debug(f'page: {page} done')
             page += 1
-            sleep(random.uniform(1, 2))
+            sleep(random.uniform(2, 3))
 
     
     def _comment_content(self, comment:commentNode):
@@ -451,14 +451,19 @@ class InsPostScraper:
     def _tag_request(self, tags:str, hyperlinks_info:list) -> dict:
         
         for tag in tags:
-            user_id = tag.split('@')[1]
-            url = f'{BASE_URL}/{user_id}'
-            html = self.async_get(url)
-            shared_data = self._shared_data(html)
-            full_name = shared_data['entry_data']['ProfilePage'][0]['graphql']['user']['full_name']
-            # basic_info = self._basic_info(url, html)
-            hyperlinks_info.append({'tag':tag, 'user_name':full_name})
-    
+            try:
+                user_id = tag.split('@')[1]
+                url = f'{BASE_URL}/{user_id}/'
+                html = self.get(url)
+                shared_data = self._shared_data(html)
+                full_name = shared_data['entry_data']['ProfilePage'][0]['graphql']['user']['full_name']
+                # basic_info = self._basic_info(url, html)
+                hyperlinks_info.append({'tag':tag, 'user_name':full_name})
+            except TypeError:
+                continue
+            except AttributeError:
+                continue
+            
     def _basic_info(self, postId:str, html:str) -> dict:
         #! not in use for now
         user = None
@@ -558,10 +563,14 @@ class InsPostScraper:
         return self.html
     
     def _is_login(self):
+        res = self.session.get('https://www.instagram.com/accounts/edit/')
+        html = res.html.html
+        
         if 'ds_user_id' not in self.session.cookies:
-            logger.info('IG 尚未登入')
-            
-    
+            logger.info('IG 登入cookies遺失')
+        if 'Login • Instagram' in html:
+            logger.info(f'IG 尚未登入')
+
     @staticmethod
     def _strQ2B(text):
         """轉換全形htag/tag"""
@@ -581,8 +590,14 @@ class InsPostScraper:
         #* page data with login mode
         #TODO 含有貼文相關資訊 之後可視情況應用
         
-        init_data_reg = re.compile(r'window.__additionalDataLoaded\(\'/p/{0}/\',(.*}}}}}}}})'.format(postId))
-        init_data = init_data_reg.search(html).group(1)
+        init_data_reg_0 = re.compile(r'window.__additionalDataLoaded\(\'/p/{0}/\',(.*}}}}}}}})'.format(postId))
+        init_data_reg_1 = re.compile(r'window\._sharedData = (\{.*\});<\/script>')
+        
+        result_0 = init_data_reg_0.search(html)
+        result_1 = init_data_reg_1.search(html)
+        result = result_0 or result_1
+                
+        init_data = result.group(1)
         init_json = json.loads(init_data)
         assert isinstance(init_json, dict)
         return init_json
