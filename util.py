@@ -1,6 +1,7 @@
 import requests
 from requests_html import HTMLSession
 import os
+from pathlib import Path
 import re
 import json
 import uuid
@@ -16,14 +17,13 @@ from botocore.exceptions import NoCredentialsError
 import pymongo
 from . import logger
 
+dir_path = Path(__file__).parent
+load_dotenv(Path(__file__).parent.joinpath('.env'))
+
 ACCESS_KEY = 'AKIAQNYWUZX56IQUYDVO'
 SECRET_KEY = '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'
 BUCKET = 'private.adpost.com.tw'
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['word_cloud']
-
-dir_path = os.path.dirname(os.path.abspath(__file__))
-path = os.path.join(dir_path, '.env')
-load_dotenv(path)
 
 def set_cookies(cookies_dict:dict=None, platform:str='ig'):
     if cookies_dict is None:
@@ -47,17 +47,11 @@ def set_cookies(cookies_dict:dict=None, platform:str='ig'):
             continue
     return jar
 
-def word_frequency(text:str) -> dict:
+def word_frequency(words:str) -> dict:
     try:
-        text = re.sub(r'\W*', "", text)
-        with open(os.path.join(dir_path, 'stop_words.txt'), 'r', encoding='utf-8') as f:
-            stop_words = f.read().splitlines()
-            
         counting = {}
-        words = jieba.cut(text, cut_all=False, HMM=True)
         for word in words:
-            if word not in stop_words:
-                counting[word] = counting.get(word,0) + 1
+            counting[word] = counting.get(word,0) + 1
 
         rank = sorted(counting.items(), key=lambda item: item[1], reverse=True)
         return dict(rank[:5]), counting
@@ -80,18 +74,16 @@ def get_comment_text(comments:list) -> str:
     text = re.sub(r'\W*', "", text)
     with open(os.path.join(dir_path, 'stop_words.txt'), 'r', encoding='utf-8') as f:
         stop_words = f.read().splitlines()
-    
+        
+    jieba.load_userdict(str(dir_path /'dict.txt'))
     words = jieba.cut(text, cut_all=False, HMM=True)
+    
     word_list = []
     for word in words:
         if word not in stop_words:
             word_list.append(word)
     
-    if len(word_list) > 1:
-        words = ' '.join(word_list)
-        return words
-    else:
-        return None
+    return word_list
 
 def word_cloud(text, file_name):
     try:
@@ -114,7 +106,7 @@ def word_cloud(text, file_name):
         if type(text) is dict:
             wc.generate_from_frequencies(frequencies=text)
             
-        path = dir_path + '/images/' + file_name
+        path = dir_path / 'images' / file_name
         wc.to_file(path)
         return path
     except Exception:
@@ -144,7 +136,7 @@ def upload_on_aws(local_file:str, origin_url:str):
     
     
     try:
-        s3.upload_file(local_file, 
+        s3.upload_file(str(local_file), 
                        BUCKET, 
                        f'wordcloud/{unique_id}.png', 
                        ExtraArgs={

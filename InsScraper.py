@@ -256,8 +256,8 @@ class InsPostScraper:
             else:
                 response = self.get(url) # 第一頁無須帶Params
             
-            # with open(f'./ig_page{page}.html', 'w', encoding='utf-8') as f:
-            #     f.write(response)
+            with open(f'./ig_page{page}.html', 'w', encoding='utf-8') as f:
+                f.write(response)
                 
             try:
                 api_json = json.loads(response) # 預設response為json，若為HTML則進入Exception另外萃取
@@ -352,8 +352,8 @@ class InsPostScraper:
                 comment_dict.update({'replies':replies})
                 output_json.append(comment_dict)
                 c_count += 1
-        
         all_text = get_comment_text(output_json)
+        print(all_text)
         ranked_freq, origin_freq = word_frequency(all_text)
         image_path = word_cloud(origin_freq, file_name='word_cloud.png')
         wd_url = upload_on_aws(origin_url=postId, local_file=image_path) if all_text else None
