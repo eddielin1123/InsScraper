@@ -294,10 +294,6 @@ class InsPostScraper:
                     end_cursor = replies_data.end_cursor
             
             yield shared_data.comments # -> List
-            
-            # 先新增留言再查看下一頁
-            comments, comment_count= self._comment_handler(shared_data.comments)
-            output_json.extend(comments)
 
             next_cursor = shared_data.end_cursor # 下一頁cursor
             logger.debug(f'next_cursor: {next_cursor}')
