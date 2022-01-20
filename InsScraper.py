@@ -18,7 +18,14 @@ import pymongo
 import os
 import emoji
 import pytz
-from .dataClass import commentNode, sharedData
+
+from . import exceptions
+from .dataClass import (
+    CommentItem, 
+    sharedData, 
+    PostLoginItem, 
+    ProfileLoginItem
+)
 from . import logger
 from .util import (
     get_comment_text,
@@ -26,8 +33,6 @@ from .util import (
     upload_on_aws,
     word_frequency
 )
-
-print(logging.getLevelName(logger.getEffectiveLevel()))
 
 load_dotenv()
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['kol_ig']
@@ -53,6 +58,7 @@ HTAG_HTML_REG1 = re.compile(r'[\s\n](#(?![\s|@]))')
 TAG_CONTEXT_REG = re.compile(r'\s?(@(?![\s|@])(?!gmail)(?!yahoo)(?!outlook)(?!hotmail).*?)\s')
 TAG_CONTEXT_REG1 = re.compile(r'(@(?![\s|@])\S*?)$')
 URL_REG = re.compile(r'(https?://.*?) ')
+POST_NO_REG = re.compile(r'media\?id=(\d+)')
 XSRF = None
 
 
@@ -108,7 +114,7 @@ class InsPostScraper:
         
         if status['authenticated'] is True and status.get('oneTapPrompt'):
             self.is_login = True
-            logger.info(f'IG 登入成功: {status}')
+            logger.info(f'IG 登入成功: {status}')
         else:
             logger.error(f'IG 登入失敗: {status}')
 
@@ -119,6 +125,8 @@ class InsPostScraper:
                 resp = self.session.get(url, params=params)
                 status = resp.status_code
                 html = resp.html.html
+                title = resp.html.find('title')
+                logger.debug(f'title: {title}')
                 
                 if not cookies is None:
                     self.session.cookies = cookies
@@ -126,10 +134,12 @@ class InsPostScraper:
                 if 'Login • Instagram' in html:
                     logger.warning(f'要求登入 | retry:{i}')
                     continue
-                elif status != 200:
-                    logger.debug(html)
-                    logger.warning(f'訪問失敗 Status:{status} | retry:{i}')
-                    continue
+                elif status == 404:
+                    logger.error(f'訪問失敗 Status:{status}')
+                    raise exceptions.NotFound('頁面不存在')
+                elif status == 403:
+                    logger.error(f'訪問失敗 Status:{status} | retry:{i}')
+                    raise exceptions.TemporarilyBanned('帳號遭鎖') 
                 else:
                     logger.debug(f'Request {url}')
                     return html                    
@@ -141,22 +151,27 @@ class InsPostScraper:
     def get_profile(self, postUrl:str):
         user = postUrl.split('com/')[1].split('/')[0]
         api_url = f'{BASE_URL}/{user}/{API_PARAMS}'
-        html = self.async_get(api_url)
+        html = self.get(api_url)
         api_json = json.loads(html)
+        with open('ig_sub_debug.hmtl', 'w', encoding='utf-8') as f:
+            f.write(html)
         
         page_description = api_json.get('description', None)
         if page_description:
             if 'You must be 13 years old' in page_description:
                 logger.error('訪問錯誤: 該帳號有年齡訪問限制')
                 return {'description':page_description}
+        
         try:
-            followers = api_json['graphql']['user']['edge_followed_by']['count']
-            self._update_db(postUrl, followers)
+            api_item = ProfileLoginItem(api_json).__dict__
+            followers = api_item['followers']
+            self._update_db(postUrl, followers) # Update MongoDB
             logger.info(f'IG 訂閱數 更新成功:{followers} {postUrl}')
+        
             return {'subscribers':followers}
         except Exception:
-            logger.exception('get_profile exception')
-            return None
+            logger.exception('subscribers_exception')
+            raise
         
     def post_info(self, postId:str):
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
@@ -164,37 +179,26 @@ class InsPostScraper:
         with open('ig_basic_info.html', 'w', encoding='utf-8') as f:
             f.write(html)
         api_json = json.loads(html)
-        post = self.post_json = api_json['graphql']['shortcode_media']
-
-         # 讚數
-        likes = int(post['edge_media_preview_like']['count'])
         
-        # 留言數
-        comments = int(post['edge_media_preview_comment']['count'])
+        api_item = PostLoginItem(api_json).__dict__
+        
+        logger.info(f'IG 每日曲線 擷取成功:{postId} item:{api_item}')
 
-        # 追蹤數
-        followers = int(post['owner']['edge_followed_by']['count'])
-
-        logger.info(f'likes:{likes} | comments:{comments} | followers:{followers}')
-        logger.info(f'IG 每日曲線 擷取成功:{postId}')
-
-        return {'likes':likes,
-                'comments':comments,
-                'followers':followers}
+        return {'likes':api_item['like'],
+                'comments':api_item['comment']}
                 
     def get_post(self, postId:str) -> dict:
         
-        url = f'{BASE_URL}/p/{postId}/'
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.get(api_url)
         api_json = json.loads(html)
 
         # html = self.html = self.get(url)
-        post = self.post_json = api_json['graphql']['shortcode_media']
+        post = self.post_json = api_json['items'][0]
         hyperlinks_info = []
 
         # 貼文
-        post_context = post['edge_media_to_caption']['edges'][0]['node']['text']
+        post_context = post['caption']['text']
         post_context = self._strQ2B(post_context)
         post_context = self._htag_normalize(post_context)
 
@@ -211,12 +215,6 @@ class InsPostScraper:
         # 網址
         url_ = URL_REG.findall(post_context)
         
-        # 讚數
-        likes = int(post['edge_media_preview_like']['count'])
-        
-        # 留言數
-        comments = int(post['edge_media_preview_comment']['count'])
-        
         hyperlinks = htags + tags + url_
         hyperlinks = list(hyperlinks)
         
@@ -230,7 +228,122 @@ class InsPostScraper:
                 'hyperlinks':hyperlinks,
                 'hyperlinks_info':hyperlinks_info}
     
-    def _comments_iter(self, postId:str, cursor:str=None):
+    def get_comments(self, postId:str):
+        total_count = 0
+        output_json = []
+        
+        self._is_login()
+        
+        # API只認手機headers
+        self.session.headers.update({'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 105.0.0.11.118 (iPhone11,8; iOS 12_3_1; en_US; en-US; scale=2.00; 828x1792; 165586599)'})
+
+        for comment in self._comments_iter(postId): # 留言(換頁)產生器
+            
+            comment_ = CommentItem(comment).__dict__
+            
+            if len(comment['replies']) > 0:
+                for r in comment['replies']:
+                    comment_['replies'].append(CommentItem(r).__dict__)
+                    total_count += 1
+            output_json.append(comment_)
+            
+            total_count += 1
+                
+        all_text = get_comment_text(output_json)
+        ranked_freq, origin_freq = word_frequency(all_text)
+        image_path = word_cloud(origin_freq, file_name='word_cloud.png')
+        wd_url = upload_on_aws(origin_url=postId, local_file=image_path) if all_text else None
+        
+        logger.info(f'IG 留言 擷取成功:{postId} 共有{total_count}筆')
+        return {
+            'comments':output_json,
+            'wordcloud_url':wd_url,
+            'word_frequency':ranked_freq
+            }
+    
+    def _comments_iter(self, postId:str):
+        origin_url = f'{BASE_URL}/p/{postId}/'
+        
+        html = self.get(origin_url)
+        post_no = self._extract_post_no(html)
+        
+        url = f'https://i.instagram.com/api/v1/media/{post_no}/comments/'
+        params = {
+                "can_support_threading":True,
+                "permalink_enabled":False
+            }
+        end_cursor = None
+        page = 1
+        while True:
+            html = self.get(url, params=params)
+            with open(f'ig_api_page_{page}.html' ,'w', encoding='utf-8') as f:
+                f.write(html)
+            json_data = json.loads(html)
+            comments = json_data.get("comments")
+            comment_id = None
+                        
+            if not comments:
+                break
+            
+            for comment in comments:
+                comment_id = comment['pk']
+                reply_count = comment.get('num_tail_child_comments', 0)
+
+                replies = []
+                if reply_count > 0:
+                    for reply in self._replies_iter(post_no, comment_id):
+                        replies.append(reply)
+                
+                comment['replies'] = replies
+                yield comment
+                
+            end_cursor = json_data.get("next_min_id")
+            if end_cursor:
+                params["min_id"] = end_cursor
+                logger.info(f'Page {page} done')
+                sleep(random.uniform(1,3))
+            else:
+                break
+            
+            if page == 1:
+                del params['permalink_enabled']
+                
+            page += 1
+                
+            
+    def _replies_iter(self, post_no, comment_id):
+        """ {
+                    'author':comment.author,
+                    'thumbnail':comment.thumbnail,
+                    'context':comment.context,
+                    'likes':comment.likes,
+                    'published_time':datetime.fromtimestamp(comment.timestamp)
+                }
+        """
+        reply_url = f'https://i.instagram.com/api/v1/media/{post_no}/comments/{comment_id}/child_comments/?max_id='
+        next_cursor = None
+        while True:
+            html = self.get(reply_url)
+            json_data = json.loads(html)
+            comments = json_data.get('child_comments')
+            comment_count = json_data.get('child_comment_count')
+            
+            logger.info(f'留言ID:{comment_id} 子留言數:{comment_count}')
+            
+            if not comments:
+                break
+            
+            for comment in comments:
+                yield comment 
+            
+            next_cursor = json_data.get('next_max_child_cursor')
+            if next_cursor:
+                reply_url = f'https://i.instagram.com/api/v1/media/{post_no}/comments/{comment_id}/child_comments/?max_id={next_cursor}'
+                sleep(random.uniform(1,3))
+            else:
+                break
+    
+    def _comments_iter_deprecated(self, postId:str, cursor:str=None):
         '''
         敘述: 留言換頁產生器
         
@@ -240,7 +353,7 @@ class InsPostScraper:
         
         '''
         
-        url = REFERER = f'{BASE_URL}/p/{postId}/'
+        url = f'{BASE_URL}/p/{postId}/'
         page = 1
         has_next_page = True
         
@@ -262,9 +375,10 @@ class InsPostScraper:
             try:
                 api_json = json.loads(response) # 預設response為json，若為HTML則進入Exception另外萃取
                 shared_data = sharedData(api_json)
-                
             except Exception:
                 init_json = self._init_data(postId, response)
+                with open(f'ig_json_data.html', 'w', encoding='utf-8') as f:
+                    f.write(str(init_json))
                 shared_data = sharedData(init_json)
 
             if not len(shared_data.comments) > 1:
@@ -309,8 +423,7 @@ class InsPostScraper:
             page += 1
             sleep(random.uniform(2, 3))
 
-    
-    def _comment_content(self, comment:commentNode):
+    def _comment_content(self, comment):
         '''
         敘述: 回傳單筆留言內容
         
@@ -324,8 +437,13 @@ class InsPostScraper:
                     'likes':comment.likes,
                     'published_time':datetime.fromtimestamp(comment.timestamp)
                 }
-            
-    def get_comments(self, postId:str):
+    
+    def _extract_post_no(self, html):
+        result = POST_NO_REG.search(html)
+        if result:
+            return result.group(1)
+    
+    def get_comments_deprecated(self, postId:str):
         '''
         敘述: 取得文章所有留言的主方法
         
@@ -337,7 +455,10 @@ class InsPostScraper:
         output_json = []
         
         self._is_login() # 確認登入
-        
+        self.session.headers.update({'User-Agent':'Mozilla/5.0 (Linux; Android 9; SM-A102U Build/PPR1.180610.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.136 Mobile Safari/537.36 Instagram 155.0.0.37.107 Android (28/9; 320dpi; 720x1468; samsung; SM-A102U; a10e; exynos7885; en_US; 239490550)'})
+        resp = self.get('https://i.instagram.com/api/v1/media/2741672124140823955/comments/?can_support_threading=true&permalink_enabled=false')
+        with open('ig_api_debug.html', 'w', encoding='utf-8') as f:
+            f.write(resp)
         for comments in self._comments_iter(postId): # 呼叫換頁產生器
             for comment in comments: # 迭代所有留言
                 comment_ = commentNode(comment['node'])
@@ -614,7 +735,7 @@ class InsPostScraper:
     @staticmethod
     def _rotate_proxy(async_access=False):
         proxy = random.choice([f'F3JZJYifgvqVCHbd:wifi;@proxy.soax.com:{n}'for n in range(9000, 9401)])
-        proxies = {'http':f'http://{proxy}', 'https':f'https://{proxy}'}
+        proxies = {'http':f'http://{proxy}', 'https':f'http://{proxy}'}
         
         if async_access:
             proxies = f'http://{proxy}'
