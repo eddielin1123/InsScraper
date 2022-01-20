@@ -108,7 +108,7 @@ def word_cloud(text, file_name):
             
         path = dir_path / 'images' / file_name
         wc.to_file(path)
-        return path
+        return str(path)
     except Exception:
         logger.exception('word_cloud_exception')
         return None
@@ -120,15 +120,16 @@ def upload_on_aws(local_file:str, origin_url:str):
                       config=Config(proxies={'https': 'F3JZJYifgvqVCHbd:wifi;;;;@proxy.soax.com:9000'})
                       )
     unique_id = uuid.uuid3(uuid.NAMESPACE_DNS, origin_url)
-    image_url = f'https://s3.ap-northeast-1.amazonaws.com/private.adpost.com.tw/wordcloud/{unique_id}.png'
+    
+    image_url = f'https://s3.ap-northeast-1.amazonaws.com/private.adpost.com.tw/wordcloud/{str(unique_id)}.png'
     utc_now = datetime.datetime.now(tz=pytz.timezone('UTC')).astimezone(pytz.timezone('Asia/Taipei'))
     MONGO.update_one(
         {
-        'id':unique_id
+        'id':str(unique_id)
         },
         {
         '$set':{
-        'id':unique_id,
+        'id':str(unique_id),
         'resource':origin_url,
         'wordcloud_url':image_url,
         'update_time':utc_now
@@ -138,7 +139,7 @@ def upload_on_aws(local_file:str, origin_url:str):
     try:
         s3.upload_file(str(local_file), 
                        BUCKET, 
-                       f'wordcloud/{unique_id}.png', 
+                       f'wordcloud/{str(unique_id)}.png', 
                        ExtraArgs={
                            'ACL': 'public-read',
                            'ContentType':'image/jpeg'

@@ -40,4 +40,29 @@ class commentNode:
             self.sub_end_cursor = comment_node['edge_threaded_comments']['page_info']['end_cursor']
         else:
             self.sub_comments = []
+
+class CommentItem:
+    def __init__(self, comment_node) -> None:
+        self.comment_id = comment_node['pk']
+        self.author = comment_node['user']['username']
+        self.thumbnail = comment_node['user']['profile_pic_url']
+        self.context = comment_node.get('text')
+        self.published_time = comment_node.get('created_at')
+        self.likes = comment_node.get('comment_like_count')
+        self.replies = []
+
+class PostLoginItem:
+    def __init__(self, json_data:dict) -> None:
+        data = json_data['items'][0]
+        self.like = data.get('like_count')
+        self.comment = data.get('comment_count')
         
+class PostAsyncItem:
+    def __init__(self, json_data) -> None:
+        data = json_data['graphql']['shortcode_media']
+        self.like = data['edge_media_preview_like']['count']
+        self.comment = data['edge_media_preview_comment']['count']
+
+class ProfileLoginItem:
+    def __init__(self, json_data) -> None:
+        self.followers = json_data['graphql']['user']['edge_followed_by']['count']
