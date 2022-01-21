@@ -11,3 +11,7 @@ class TemporarilyBanned(Exception):
 class AccountDisabled(Exception):
     '''User account disabled, with option to appeal'''
     pass
+
+class ItemTransferError(Exception):
+    '''failed to turn json data to item class'''
+    pass
