@@ -21,10 +21,13 @@ import pytz
 
 from . import exceptions
 from .dataClass import (
-    CommentItem, 
+    CommentItem,
+    PostAsyncItem, 
     sharedData, 
     PostLoginItem, 
-    ProfileLoginItem
+    ProfileLoginItem,
+    PostAsyncContentItem,
+    PostLoginContentItem
 )
 from . import logger
 from .util import (
@@ -176,13 +179,16 @@ class InsPostScraper:
     def post_info(self, postId:str):
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.get(api_url)
-        with open('ig_basic_info.html', 'w', encoding='utf-8') as f:
-            f.write(html)
+        # with open('ig_basic_info.html', 'w', encoding='utf-8') as f:
+        #     f.write(html)
         api_json = json.loads(html)
         
-        api_item = PostLoginItem(api_json).__dict__
-        
-        logger.info(f'IG 每日曲線 擷取成功:{postId} item:{api_item}')
+        try:
+            api_item = PostLoginItem(api_json).__dict__
+        except Exception:
+            api_item = PostAsyncItem(api_json).__dict__
+            
+        logger.info(f'IG 每日曲線 擷取成功:{postId}')
 
         return {'likes':api_item['like'],
                 'comments':api_item['comment']}
@@ -192,13 +198,16 @@ class InsPostScraper:
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.get(api_url)
         api_json = json.loads(html)
+        with open('ig_post.html', 'w', encoding='utf-8') as f:
+            f.write(html)
+        
+        try:
+            post_context = PostLoginItem(api_json).__dict__['content']
+        except Exception:
+            post_context = PostAsyncContentItem(api_json).__dict__['content']
 
-        # html = self.html = self.get(url)
-        post = self.post_json = api_json['items'][0]
+        # 貼文處理
         hyperlinks_info = []
-
-        # 貼文
-        post_context = post['caption']['text']
         post_context = self._strQ2B(post_context)
         post_context = self._htag_normalize(post_context)
 
