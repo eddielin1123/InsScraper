@@ -56,13 +56,22 @@ class PostLoginItem:
         data = json_data['items'][0]
         self.like = data.get('like_count')
         self.comment = data.get('comment_count')
-        
+class PostLoginContentItem(PostLoginItem):
+    def __init__(self, json_data: dict) -> None:
+        super().__init__(json_data)
+        self.content = json_data['items'][0]['caption']['text']
 class PostAsyncItem:
     def __init__(self, json_data) -> None:
-        data = json_data['graphql']['shortcode_media']
-        self.like = data['edge_media_preview_like']['count']
-        self.comment = data['edge_media_preview_comment']['count']
+        self.data = json_data['graphql']['shortcode_media']
+        self.like = self.data['edge_media_preview_like']['count']
+        self.comment = self.data['edge_media_preview_comment']['count']
 
+class PostAsyncContentItem(PostAsyncItem):
+    def __init__(self, json_data) -> None:
+        super().__init__(json_data)
+        self.content = self.data['edge_media_to_caption']['edges'][0]['node']['text']
+        
 class ProfileLoginItem:
     def __init__(self, json_data) -> None:
         self.followers = json_data['graphql']['user']['edge_followed_by']['count']
+        
