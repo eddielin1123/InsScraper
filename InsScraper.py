@@ -204,7 +204,7 @@ class InsPostScraper:
         try:
             post_context = PostLoginItem(api_json).__dict__['content']
         except Exception:
-            post_context = PostAsyncContentItem(api_json).__dict__['content']
+            post_context = PostLoginContentItem(api_json).__dict__['content']
 
         # 貼文處理
         hyperlinks_info = []
