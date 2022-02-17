@@ -296,7 +296,7 @@ class InsPostScraper:
             
             for comment in comments:
                 comment_id = comment['pk']
-                reply_count = comment.get('num_tail_child_comments', 0)
+                reply_count = comment.get('num_tail_child_comments', 0) or comment.get('child_comment_count', 0)
 
                 replies = []
                 if reply_count > 0:
