@@ -1,20 +1,24 @@
-import requests
-from requests_html import HTMLSession
 import os
-from pathlib import Path
 import re
-import json
 import uuid
+import json
 import datetime
+from pathlib import Path
+
+import cld3
+import boto3
+import emoji
 import pytz
-from dotenv import load_dotenv
 import jieba
+import requests
+import pymongo
 import numpy as np 
 from wordcloud import WordCloud 
-import boto3
+from dotenv import load_dotenv
 from botocore.config import Config
+from requests_html import HTMLSession
 from botocore.exceptions import NoCredentialsError
-import pymongo
+
 from . import logger
 
 dir_path = Path(__file__).parent
@@ -24,6 +28,31 @@ ACCESS_KEY = 'AKIAQNYWUZX56IQUYDVO'
 SECRET_KEY = '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'
 BUCKET = 'private.adpost.com.tw'
 MONGO = pymongo.MongoClient(os.getenv('MONGOURI'))[os.getenv('MONGO_COLL')]['word_cloud']
+
+def _check_language(text:str, lang:'str'=None) -> bool:
+    #* 確認是否出現 中文/英文/lang 以外的語言
+    #! 注意：判斷用的模型並非 100% 正確
+    
+    # 預設可接受語言
+    allow_language = ['zh', 'en']
+    # not_allow_language = ['th']
+    if lang: # 
+        allow_language.append(lang)
+    
+    result = cld3.get_frequent_languages(text, num_langs=3)
+    
+    if result:
+        languages = [l.language for l in result]
+    else:
+        return True
+    
+    # 判斷「結果語言」是否與「預期語言」相符
+    if not set(languages) & set(allow_language):
+        logger.warning(f'Found illegal text: {text}')
+        print(languages)
+        return False
+    
+    return True
 
 def set_cookies(cookies_dict:dict=None, platform:str='ig'):
     if cookies_dict is None:
@@ -61,28 +90,53 @@ def word_frequency(words:str) -> dict:
     
 def get_comment_text(comments:list) -> str:
     text = ''
-    if comments:
-        for comment in comments:
-            if comment.get('context'):
-                if comment['context']:
-                    text += comment['context'].lower()
-            if comment.get('replies'):
-                for r in comment['replies']:
-                    if r['context']:
-                        text += r['context'].lower()
+    if not comments:
+        logger.error('Comments list is empty')
+        return None
     
+    for comment in comments:
+        
+        # 跳過無留言資料
+        if not comment.get('context'):
+            continue
+        
+        # 跳過空留言
+        if not comment['context']:
+            continue
+        
+        comment_text = comment['context'].lower()
+        comment_text = emoji.get_emoji_regexp().sub(r'', comment_text)
+        check_language = _check_language(text=comment_text)
+        if check_language is True:
+            text += comment_text
+        
+        # 不含子留言則繼續迴圈
+        if not comment.get('replies'):
+            continue
+        
+        for r in comment['replies']:
+            if not r['context']:
+                continue
+            replies_text = r['context'].lower()
+            check_language = _check_language(text=replies_text)
+            if check_language is True:
+                text += replies_text
+    
+    # 去除非文字字串
     text = re.sub(r'\W*', "", text)
     with open(os.path.join(dir_path, 'stop_words.txt'), 'r', encoding='utf-8') as f:
         stop_words = f.read().splitlines()
-        
+    
+    # 結巴斷詞
     jieba.load_userdict(str(dir_path /'dict.txt'))
     words = jieba.cut(text, cut_all=False, HMM=True)
     
+    # 去除停用字
     word_list = []
     for word in words:
         if word not in stop_words:
             word_list.append(word)
-    
+    print(word_list)
     return word_list
 
 def word_cloud(text, file_name):

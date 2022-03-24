@@ -77,7 +77,7 @@ class InsPostScraper:
         'sec-fetch-dest':'document'
     }
     
-    def __init__(self, session=None, proxy=False):
+    def __init__(self, session=None, proxy=False, **kwargs):
         if session is None:
             self.session = HTMLSession()
         else:
@@ -94,6 +94,10 @@ class InsPostScraper:
         self.html = None
         self.post_json = None
         self.is_login = False
+        self._functions = {
+            'get_basic_info':self.post_info
+        }
+        self.exceptions = exceptions
         # self.csrf_token = self._get_csrf()
 
     def login(self, username, password): #peng_2415316 #wendy0519
@@ -139,10 +143,10 @@ class InsPostScraper:
                     continue
                 elif status == 404:
                     logger.error(f'訪問失敗 Status:{status}')
-                    raise exceptions.NotFound('頁面不存在')
+                    raise self.exceptions.NotFound('頁面不存在')
                 elif status == 403:
                     logger.error(f'訪問失敗 Status:{status} | retry:{i}')
-                    raise exceptions.TemporarilyBanned('帳號遭鎖') 
+                    raise self.exceptions.TemporarilyBanned('帳號遭鎖') 
                 else:
                     logger.debug(f'Request {url}')
                     return html                    
@@ -156,7 +160,7 @@ class InsPostScraper:
         api_url = f'{BASE_URL}/{user}/{API_PARAMS}'
         html = self.get(api_url)
         api_json = json.loads(html)
-        with open('ig_sub_debug.hmtl', 'w', encoding='utf-8') as f:
+        with open('ig_sub_debug.html', 'w', encoding='utf-8') as f:
             f.write(html)
         
         page_description = api_json.get('description', None)
@@ -197,9 +201,9 @@ class InsPostScraper:
         
         api_url = f'{BASE_URL}/p/{postId}/{API_PARAMS}'
         html = self.get(api_url)
-        api_json = json.loads(html)
         with open('ig_post.html', 'w', encoding='utf-8') as f:
             f.write(html)
+        api_json = json.loads(html)
         
         try:
             post_context = PostLoginContentItem(api_json).__dict__['content']
@@ -285,8 +289,8 @@ class InsPostScraper:
         page = 1
         while True:
             html = self.get(url, params=params)
-            with open(f'ig_api_page_{page}.html' ,'w', encoding='utf-8') as f:
-                f.write(html)
+            # with open(f'ig_api_page_{page}.html' ,'w', encoding='utf-8') as f:
+            #     f.write(html)
             json_data = json.loads(html)
             comments = json_data.get("comments")
             comment_id = None
