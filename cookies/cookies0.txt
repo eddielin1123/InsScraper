@@ -14,7 +14,7 @@
     },
     {
         "domain": ".instagram.com",
-        "expirationDate": 1643088474.90651,
+        "expirationDate": 1647869580.494425,
         "hostOnly": false,
         "httpOnly": true,
         "name": "shbts",
@@ -23,11 +23,11 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "\"1642483673\\05450772279247\\0541674019673:01f79ebdee660a58c30d592a2abd20e642c86573cc117257c631581ed425dc5b986238e0\""
+        "value": "\"1647264762\\05450772279247\\0541678800762:01f733f68cd4ac442025b9ea98de5fca2ae23b91783d4c60543b4bc34054874d39cdc50e\""
     },
     {
         "domain": ".instagram.com",
-        "expirationDate": 1650259711.815355,
+        "expirationDate": 1655040784.504657,
         "hostOnly": false,
         "httpOnly": false,
         "name": "ds_user_id",
@@ -40,7 +40,7 @@
     },
     {
         "domain": ".instagram.com",
-        "expirationDate": 1643088474.906499,
+        "expirationDate": 1647869580.494403,
         "hostOnly": false,
         "httpOnly": true,
         "name": "shbid",
@@ -49,11 +49,11 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "\"4936\\05450772279247\\0541674019673:01f72e42238b21b6f26660cde6a1a02a088f3202895200f4f2989c09059d724927e07f72\""
+        "value": "\"4936\\05450772279247\\0541678800762:01f7287110d6b79578a7181abe6c2cb47000b483148e11d051faf681b135890b50cc58e7\""
     },
     {
         "domain": ".instagram.com",
-        "expirationDate": 1673933311.815315,
+        "expirationDate": 1662816784.50461,
         "hostOnly": false,
         "httpOnly": false,
         "name": "csrftoken",
@@ -92,7 +92,7 @@
     },
     {
         "domain": ".instagram.com",
-        "expirationDate": 1674019673.717775,
+        "expirationDate": 1661830756.591814,
         "hostOnly": false,
         "httpOnly": true,
         "name": "sessionid",
@@ -113,6 +113,6 @@
         "secure": true,
         "session": true,
         "storeId": null,
-        "value": "\"ODN\\05450772279247\\0541674019710:01f7c16bc47367456828c2c82bd982242ad3c00cad78f9ed4d1ae26c45b75a642a84f4d0\""
+        "value": "\"PRN\\05450772279247\\0541678800766:01f7ac7566c5439f21bf8c6a8745868d6f9669d863617dbd786069694571ba0dadfb1a3e\""
     }
 ]
