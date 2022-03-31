@@ -1,23 +1,24 @@
-import logging
+import os
 import re
-from pymongo import results
-import requests
-from requests_html import HTMLSession
-from datetime import datetime
-from time import sleep
-from urllib.parse import quote
 import json
-import random
-from requests.exceptions import ProxyError
 import asyncio
 import aiohttp
+import random
+import logging
+from time import sleep
 from pprint import pprint
 from datetime import datetime
+from urllib.parse import quote
+from datetime import datetime
 from dotenv import load_dotenv
-import pymongo
-import os
-import emoji
+
 import pytz
+import emoji
+import pymongo
+import requests
+from requests.exceptions import ProxyError, SSLError
+from requests_html import HTMLSession
+from pymongo import results
 
 from . import exceptions
 from .dataClass import (
@@ -129,7 +130,7 @@ class InsPostScraper:
         for i in range(10):
             self.session.proxies = self._rotate_proxy()
             try:
-                resp = self.session.get(url, params=params)
+                resp = self.session.get(url, params=params, verify=False)
                 status = resp.status_code
                 html = resp.html.html
                 title = resp.html.find('title')
@@ -150,9 +151,14 @@ class InsPostScraper:
                 else:
                     logger.debug(f'Request {url}')
                     return html                    
-                
+               
             except ProxyError as e:
                 logger.exception(f'Proxy Error | retry:{i}')
+                continue
+            
+            except SSLError as e:
+                retry_wait = random.uniform(5,10)
+                logger.exception(f'SSL Error | retry:{i} after {retry_wait} seconds')
                 continue
     
     def get_profile(self, postUrl:str):
