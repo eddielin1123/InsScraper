@@ -156,7 +156,7 @@ class InsPostScraper:
                 logger.exception(f'Proxy Error | retry:{i}')
                 continue
             
-            except SSLError as e:
+            except requests.exceptions.SSLError as e:
                 retry_wait = random.uniform(5,10)
                 logger.exception(f'SSL Error | retry:{i} after {retry_wait} seconds')
                 continue
@@ -295,9 +295,14 @@ class InsPostScraper:
         page = 1
         while True:
             html = self.get(url, params=params)
+            sleep(random.uniform(3,5))
             # with open(f'ig_api_page_{page}.html' ,'w', encoding='utf-8') as f:
             #     f.write(html)
-            json_data = json.loads(html)
+            try:
+                json_data = json.loads(html)
+            except json.decoder.JSONDecodeError:
+                with open(f'ig_json_error.html', 'w', encoding='utf-8') as f:
+                    f.write(html)
             comments = json_data.get("comments")
             comment_id = None
                         
@@ -320,7 +325,7 @@ class InsPostScraper:
             if end_cursor:
                 params["min_id"] = end_cursor
                 logger.info(f'Page {page} done')
-                sleep(random.uniform(1,3))
+                
             else:
                 break
             
@@ -358,7 +363,7 @@ class InsPostScraper:
             next_cursor = json_data.get('next_max_child_cursor')
             if next_cursor:
                 reply_url = f'https://i.instagram.com/api/v1/media/{post_no}/comments/{comment_id}/child_comments/?max_id={next_cursor}'
-                sleep(random.uniform(1,3))
+                sleep(random.uniform(3,5))
             else:
                 break
     
