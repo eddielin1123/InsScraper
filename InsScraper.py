@@ -316,6 +316,8 @@ class InsPostScraper:
                 replies = []
                 if reply_count > 0:
                     for reply in self._replies_iter(post_no, comment_id):
+                        if reply is None:
+                            continue
                         replies.append(reply)
                 
                 comment['replies'] = replies
@@ -348,7 +350,12 @@ class InsPostScraper:
         next_cursor = None
         while True:
             html = self.get(reply_url)
-            json_data = json.loads(html)
+            try:
+                json_data = json.loads(html)
+            except Exception:
+                with open(f'ig_reply_json_error.html', 'w', encoding='utf-8') as f:
+                    f.write(html)
+                logger.warning(f'Failed to get replies')
             comments = json_data.get('child_comments')
             comment_count = json_data.get('child_comment_count')
             
@@ -742,8 +749,6 @@ class InsPostScraper:
         init_json = json.loads(init_data)
         assert isinstance(init_json, dict)
         return init_json
-    
-    
     
     @staticmethod
     def _shared_data(html):
