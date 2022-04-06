@@ -356,6 +356,7 @@ class InsPostScraper:
                 with open(f'ig_reply_json_error.html', 'w', encoding='utf-8') as f:
                     f.write(html)
                 logger.warning(f'Failed to get replies')
+                return None
             comments = json_data.get('child_comments')
             comment_count = json_data.get('child_comment_count')
             
