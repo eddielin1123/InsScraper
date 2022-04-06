@@ -99,6 +99,7 @@ class InsPostScraper:
             'get_basic_info':self.post_info
         }
         self.exceptions = exceptions
+        self.page = 1
         # self.csrf_token = self._get_csrf()
 
     def login(self, username, password): #peng_2415316 #wendy0519
@@ -143,6 +144,11 @@ class InsPostScraper:
                     logger.warning(f'要求登入 | retry:{i}')
                     continue
                 elif status == 404:
+                    if self.page > 1:
+                        retry_wait = random.uniform(10,15)
+                        logger.exception(f'Page not found while iter pages | retry:{i} after {retry_wait} seconds')
+                        sleep(retry_wait)
+                        continue
                     logger.error(f'訪問失敗 Status:{status}')
                     raise self.exceptions.NotFound('頁面不存在')
                 elif status == 403:
@@ -157,8 +163,15 @@ class InsPostScraper:
                 continue
             
             except requests.exceptions.SSLError as e:
-                retry_wait = random.uniform(5,10)
-                logger.exception(f'SSL Error | retry:{i} after {retry_wait} seconds')
+                retry_wait = random.uniform(5,7)
+                logger.exception(f'SSL Error:{e} | retry:{i} after {retry_wait} seconds')
+                sleep(retry_wait)
+                continue
+            
+            except CertificateError as e:
+                retry_wait = random.uniform(10,15)
+                logger.exception(f'Certificate Error:{e} | retry:{i} after {retry_wait} seconds')
+                sleep(retry_wait)
                 continue
     
     def get_profile(self, postUrl:str):
@@ -292,17 +305,27 @@ class InsPostScraper:
                 "permalink_enabled":False
             }
         end_cursor = None
-        page = 1
+        retry = 0
         while True:
+            
+            if retry == 3:
+                raise Exception('Retry time has been reached')
+            
             html = self.get(url, params=params)
             sleep(random.uniform(3,5))
+            
             # with open(f'ig_api_page_{page}.html' ,'w', encoding='utf-8') as f:
             #     f.write(html)
+            
             try:
                 json_data = json.loads(html)
             except json.decoder.JSONDecodeError:
                 with open(f'ig_json_error.html', 'w', encoding='utf-8') as f:
                     f.write(html)
+                sleep(random.uniform(5,10))
+                retry += 1
+                continue
+            
             comments = json_data.get("comments")
             comment_id = None
                         
@@ -331,10 +354,10 @@ class InsPostScraper:
             else:
                 break
             
-            if page == 1:
+            if self.page == 1:
                 del params['permalink_enabled']
                 
-            page += 1
+            self.page += 1
                 
             
     def _replies_iter(self, post_no, comment_id):
