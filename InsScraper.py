@@ -96,7 +96,10 @@ class InsPostScraper:
         self.post_json = None
         self.is_login = False
         self._functions = {
-            'get_basic_info':self.post_info
+            'get_basic_info':self.post_info,
+            'get_comments':self.get_comments,
+            'get_subscribers':self.get_profile,
+            'get_post':self.get_post
         }
         self.exceptions = exceptions
         self.page = 1
@@ -260,15 +263,16 @@ class InsPostScraper:
                 'hyperlinks':hyperlinks,
                 'hyperlinks_info':hyperlinks_info}
     
-    def get_comments(self, postId:str):
+    def get_comments(self, postId:str, wordcloud:bool=False):
         total_count = 0
-        output_json = []
+        output = {}
         
         self._is_login()
         
         # API只認手機headers
         self.session.headers.update({'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 105.0.0.11.118 (iPhone11,8; iOS 12_3_1; en_US; en-US; scale=2.00; 828x1792; 165586599)'})
 
+        comments = []
         for comment in self._comments_iter(postId): # 留言(換頁)產生器
             
             comment_ = CommentItem(comment).__dict__
@@ -277,21 +281,26 @@ class InsPostScraper:
                 for r in comment['replies']:
                     comment_['replies'].append(CommentItem(r).__dict__)
                     total_count += 1
-            output_json.append(comment_)
+            comments.append(comment_)
             
             total_count += 1
-                
-        all_text = get_comment_text(output_json)
-        ranked_freq, origin_freq = word_frequency(all_text)
-        image_path = word_cloud(origin_freq, file_name='word_cloud.png')
-        wd_url = upload_on_aws(origin_url=postId, local_file=image_path) if all_text else None
-        
+            
+        output.update({
+            'comments':comments
+        })
+
+        if wordcloud:
+            all_text = get_comment_text(comments)
+            ranked_freq, origin_freq = word_frequency(all_text)
+            image_path = word_cloud(origin_freq, file_name='word_cloud.png')
+            wd_url = upload_on_aws(origin_url=postId, local_file=image_path) if all_text else None
+            output.update({
+                'wordcloud_url':wd_url,
+                'word_frequency':ranked_freq
+            })
+
         logger.info(f'IG 留言 擷取成功:{postId} 共有{total_count}筆')
-        return {
-            'comments':output_json,
-            'wordcloud_url':wd_url,
-            'word_frequency':ranked_freq
-            }
+        return output
     
     def _comments_iter(self, postId:str):
         origin_url = f'{BASE_URL}/p/{postId}/'
@@ -349,7 +358,7 @@ class InsPostScraper:
             end_cursor = json_data.get("next_min_id")
             if end_cursor:
                 params["min_id"] = end_cursor
-                logger.info(f'Page {page} done')
+                logger.info(f'Page {self.page} done')
                 
             else:
                 break
@@ -359,7 +368,7 @@ class InsPostScraper:
                 
             self.page += 1
                 
-            
+       
     def _replies_iter(self, post_no, comment_id):
         """ {
                     'author':comment.author,
