@@ -1,5 +1,6 @@
 import os
 import re
+import ssl
 import json
 import asyncio
 import aiohttp
@@ -171,7 +172,7 @@ class InsPostScraper:
                 sleep(retry_wait)
                 continue
             
-            except CertificateError as e:
+            except ssl.CertificateError as e:
                 retry_wait = random.uniform(10,15)
                 logger.exception(f'Certificate Error:{e} | retry:{i} after {retry_wait} seconds')
                 sleep(retry_wait)
@@ -319,12 +320,14 @@ class InsPostScraper:
             
             if retry == 3:
                 raise Exception('Retry time has been reached')
-            
-            html = self.get(url, params=params)
+            try:
+                html = self.get(url, params=params)
+            except Exception:
+                with open(f'ig_api_page_{self.page}.html' ,'w', encoding='utf-8') as f:
+                    f.write(html)
+
             sleep(random.uniform(3,5))
             
-            # with open(f'ig_api_page_{page}.html' ,'w', encoding='utf-8') as f:
-            #     f.write(html)
             
             try:
                 json_data = json.loads(html)
