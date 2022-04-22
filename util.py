@@ -171,7 +171,7 @@ def upload_on_aws(local_file:str, origin_url:str):
     s3 = boto3.client('s3', 
                       aws_access_key_id=ACCESS_KEY,
                       aws_secret_access_key=SECRET_KEY,
-                      config=Config(proxies={'https': 'F3JZJYifgvqVCHbd:wifi;;;;@proxy.soax.com:9000'})
+                      config=Config(proxies={'http': 'F3JZJYifgvqVCHbd:wifi;;;;@proxy.soax.com:9000'})
                       )
     unique_id = uuid.uuid3(uuid.NAMESPACE_DNS, origin_url)
     
